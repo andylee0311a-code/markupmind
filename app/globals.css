@@ -42,9 +42,10 @@ h1 em { color:#739b23; font-weight:500; }
 textarea { width:100%; height:100%; min-height:470px; border:0; resize:none; outline:0; padding:20px; color:var(--code-text); background:transparent; font:13px/22px Consolas,monospace; white-space:pre; overflow:auto; }
 .editor-foot { min-height:67px; padding:12px 18px; display:flex; align-items:center; justify-content:space-between; border-top:1px solid var(--line); }
 .editor-foot > span { font:11px monospace; color:#8c9692; }
-.editor-foot button { cursor:pointer; border:0; border-radius:8px; background:var(--ink); color:white; padding:12px 18px; font-size:12px; font-weight:bold; box-shadow:0 5px 15px rgba(23,51,45,.2); }
+.editor-foot button { cursor:pointer; border:0; border-radius:8px; background:var(--ink); color:var(--panel); padding:12px 18px; font-size:12px; font-weight:bold; box-shadow:0 5px 15px rgba(23,51,45,.2); }
 .editor-foot button:disabled { cursor:wait; opacity:.7; }
-.editor-foot button span { color:var(--mint); margin-left:10px; }
+.editor-foot button span { color:#8fbd25; margin-left:10px; }
+:root[data-theme="dark"] .editor-foot button span { color:#527900; }
 .results-panel { display:flex; flex-direction:column; min-width:0; background:var(--panel-soft); }
 .score-row { height:105px; padding:20px 24px; display:flex; align-items:center; gap:16px; border-bottom:1px solid var(--line); }
 .score { width:66px; height:66px; display:flex; align-items:baseline; justify-content:center; padding-top:18px; border-radius:50%; background:conic-gradient(#e6a235 0 78%,#e6e9df 78%); position:relative; }
