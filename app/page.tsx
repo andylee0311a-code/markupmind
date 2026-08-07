@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { HtmlValidate } from "html-validate/browser";
 import { Dialect, WorkerLinter } from "harper.js";
 import { binaryInlined } from "harper.js/binaryInlined";
+import { dtrLogo } from "./dtr-logo";
 
 type Issue = {
   id: string;
@@ -170,6 +171,7 @@ export default function Home() {
   const [checked, setChecked] = useState(false);
   const [checking, setChecking] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [filter, setFilter] = useState<"all" | Issue["type"]>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -208,6 +210,10 @@ export default function Home() {
 
   const handleFile = async (file?: File) => {
     if (!file) return;
+    if (!/\.html?$/i.test(file.name) && file.type !== "text/html") {
+      window.alert("請選擇 .html 或 .htm 檔案。");
+      return;
+    }
     const source = await file.text();
     setCode(source);
     setChecked(false);
@@ -220,7 +226,11 @@ export default function Home() {
   return (
     <main className={`app-shell font-scale-${fontScale}`}>
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">✓</span><span>Markup<span>Mind</span></span></div>
+        <div className="brand-area">
+          <img className="dtr-logo" src={dtrLogo} alt="DT Research" />
+          <span className="brand-divider" aria-hidden />
+          <div className="brand"><span className="brand-mark">✓</span><span>Markup<span>Mind</span></span></div>
+        </div>
         <div className="header-actions">
           <div className="font-controls" aria-label="字體大小">
             <button aria-label="縮小字體" disabled={fontScale === 90} onClick={() => setFontScale(fontScale === 110 ? 100 : 90)}>A−</button>
@@ -247,9 +257,16 @@ export default function Home() {
             <button className="upload" onClick={() => fileInput.current?.click()}>↑ 上傳 .html</button>
             <input ref={fileInput} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => handleFile(e.target.files?.[0])}/>
           </div>
-          <div className="code-wrap">
+          <div
+            className={`code-wrap ${dragging ? "is-dragging" : ""}`}
+            onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+            onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setDragging(true); }}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
+            onDrop={(event) => { event.preventDefault(); setDragging(false); void handleFile(event.dataTransfer.files?.[0]); }}
+          >
             <div className="line-nums" aria-hidden>{code.split("\n").map((_, i) => <span key={i}>{i + 1}</span>)}</div>
             <textarea aria-label="HTML 原始碼" spellCheck={false} value={code} onChange={(e) => {setCode(e.target.value); setChecked(false);}} />
+            {dragging && <div className="drop-overlay"><strong>放開以上傳 HTML</strong><span>支援 .html 與 .htm 檔案</span></div>}
           </div>
           <div className="editor-foot"><span>{code.split("\n").length} 行 · {new Blob([code]).size} bytes</span><button onClick={() => runCheck()} disabled={checking}>{checking ? "全面分析中…" : "執行完整檢查"} <span>→</span></button></div>
         </div>
@@ -275,9 +292,8 @@ export default function Home() {
         </aside>
       </section>
 
-      <footer><span>MarkupMind · HTML quality, made clear.</span><span>HTML 結構　·　英文文法　·　無障礙設計</span></footer>
+      <footer><span>MarkupMind · HTML quality, made clear.</span><span>Designed by Andy Lee</span><span>HTML 結構　·　英文文法　·　無障礙設計</span></footer>
       <button className="back-to-top" aria-label="回到頁面頂端" title="回到頂端" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
     </main>
   );
 }
-
