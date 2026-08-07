@@ -81,6 +81,78 @@ function translateGrammarIssue(kind: string, message: string) {
   return { title: "英文文法需要調整", message: "偵測到可能的英文文法或用字問題，請參考下方建議內容修正。" };
 }
 
+type GrammarFinding = Pick<Issue, "title" | "message" | "replacement"> & { index: number };
+
+function findHighConfidenceGrammarIssues(text: string): GrammarFinding[] {
+  const findings: GrammarFinding[] = [];
+  const addMatches = (
+    pattern: RegExp,
+    create: (match: RegExpExecArray) => Omit<GrammarFinding, "index">,
+  ) => {
+    for (const match of text.matchAll(pattern)) findings.push({ ...create(match), index: match.index });
+  };
+
+  addMatches(/\b(a)\s+(apple|answer|idea|image|issue|element|error|option|example|application|email|hour|honest)\b/gi, (match) => ({
+    title: "冠詞使用錯誤",
+    message: `「${match[2]}」以母音音素開頭，前面應使用 an。`,
+    replacement: `an ${match[2]}`,
+  }));
+  addMatches(/\b(an)\s+(user|university|unique|useful|website|page|button|form|report|component)\b/gi, (match) => ({
+    title: "冠詞使用錯誤",
+    message: `「${match[2]}」以子音音素開頭，前面應使用 a。`,
+    replacement: `a ${match[2]}`,
+  }));
+  addMatches(/\b(we|you|they|these|those)\s+(is|was|has|does)\b/gi, (match) => {
+    const replacements: Record<string, string> = { is: "are", was: "were", has: "have", does: "do" };
+    return {
+      title: "主詞與動詞不一致",
+      message: `主詞「${match[1]}」應搭配複數動詞。`,
+      replacement: `${match[1]} ${replacements[match[2].toLowerCase()]}`,
+    };
+  });
+  addMatches(/\b(our|their|these|those)\s+([a-z]+s)\s+(helps|needs|makes|works|provides|allows|supports|is|has|does)\b/gi, (match) => {
+    const replacements: Record<string, string> = { is: "are", has: "have", does: "do" };
+    const verb = match[3].toLowerCase();
+    return {
+      title: "主詞與動詞不一致",
+      message: `複數主詞「${match[2]}」應搭配原形或複數動詞。`,
+      replacement: `${match[1]} ${match[2]} ${replacements[verb] || verb.replace(/s$/, "")}`,
+    };
+  });
+  addMatches(/\bthere\s+(is|was)\s+([a-z]+s)\b/gi, (match) => ({
+    title: "單複數搭配錯誤",
+    message: `「${match[2]}」是複數名詞，there 後面應使用複數動詞。`,
+    replacement: `there ${match[1].toLowerCase() === "is" ? "are" : "were"} ${match[2]}`,
+  }));
+  addMatches(/\b([a-z]+)\s+\1\b/gi, (match) => ({
+    title: "英文單字重複",
+    message: `「${match[1]}」連續出現兩次，通常只需保留一次。`,
+    replacement: match[1],
+  }));
+  addMatches(/\b(could|should|would|must)\s+of\b/gi, (match) => ({
+    title: "助動詞片語錯誤",
+    message: `「${match[1]} of」應改為「${match[1]} have」。`,
+    replacement: `${match[1]} have`,
+  }));
+  addMatches(/\b(more|most)\s+(better|best|worse|worst|easier|easiest|faster|fastest)\b/gi, (match) => ({
+    title: "比較級重複",
+    message: `「${match[2]}」本身已是比較級或最高級，不需再加 ${match[1]}。`,
+    replacement: match[2],
+  }));
+  addMatches(/\b(build|create|design|make)\s+(better\s+|new\s+|simple\s+|responsive\s+)?(website|page|application|form|button|component|report)\b/gi, (match) => ({
+    title: "可數名詞缺少冠詞",
+    message: `單數可數名詞「${match[3]}」前通常需要 a、an 或 the。`,
+    replacement: `${match[1]} a ${match[2] || ""}${match[3]}`,
+  }));
+  addMatches(/\bsave your time\b/gi, () => ({
+    title: "英文用字不自然",
+    message: "「save your time」通常表示保留時間；若要表達節省使用者時間，建議改用「save you time」。",
+    replacement: "save you time",
+  }));
+
+  return findings;
+}
+
 function analyse(source: string): Issue[] {
   const issues: Issue[] = [];
   const add = (issue: Omit<Issue, "id">) => issues.push({ ...issue, id: `${issue.type}-${issue.line}-${issues.length}` });
@@ -185,15 +257,50 @@ async function analyseDocument(source: string): Promise<Issue[]> {
     .map((match) => ({ raw: match[1], offset: (match.index || 0) + 1 }))
     .filter(({ raw }) => /[A-Za-z]{2}/.test(raw) && raw.trim().split(/\s+/).length >= 2);
   const linter = await getGrammarLinter();
+  const grammarKeys = new Set<string>();
+  const reliableHarperKinds = new Set(["Agreement", "Grammar", "Punctuation", "Repetition", "Spelling", "Typo", "Usage", "WordChoice", "WordOrder"]);
 
   for (const segment of textSegments) {
     const decoded = new DOMParser().parseFromString(`<body>${segment.raw}</body>`, "text/html").body.textContent || segment.raw;
+    for (const finding of findHighConfidenceGrammarIssues(decoded)) {
+      const line = lineOf(source, segment.offset + Math.min(finding.index, segment.raw.length));
+      const key = `${line}-${finding.title}-${finding.replacement || ""}`;
+      if (grammarKeys.has(key)) continue;
+      grammarKeys.add(key);
+      add({
+        type: "grammar",
+        severity: "warning",
+        title: finding.title,
+        message: finding.message,
+        line,
+        excerpt: excerptAt(source, line),
+        replacement: finding.replacement,
+      });
+    }
+
+    if (decoded.trim().split(/\s+/).length < 3 || !(await linter.isLikelyEnglish(decoded))) continue;
     const lints = await linter.lint(decoded, { language: "plaintext", isolateEnglish: true });
     for (const lint of lints) {
       const span = lint.span();
       const suggestions = lint.suggestions();
+      const kind = lint.lint_kind_pretty();
+      if (!reliableHarperKinds.has(kind) || suggestions.length === 0) {
+        suggestions.forEach((suggestion) => suggestion.free());
+        span.free();
+        lint.free();
+        continue;
+      }
       const line = lineOf(source, segment.offset + Math.min(span.start, segment.raw.length));
-      const translated = translateGrammarIssue(lint.lint_kind_pretty(), lint.message());
+      const translated = translateGrammarIssue(kind, lint.message());
+      const replacement = suggestions[0]?.get_replacement_text();
+      const key = `${line}-${translated.title}-${replacement || ""}`;
+      if (grammarKeys.has(key)) {
+        suggestions.forEach((suggestion) => suggestion.free());
+        span.free();
+        lint.free();
+        continue;
+      }
+      grammarKeys.add(key);
       add({
         type: "grammar",
         severity: "warning",
@@ -201,7 +308,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
         message: translated.message,
         line,
         excerpt: excerptAt(source, line),
-        replacement: suggestions[0]?.get_replacement_text(),
+        replacement,
       });
       suggestions.forEach((suggestion) => suggestion.free());
       span.free();
