@@ -258,7 +258,9 @@ async function analyseDocument(source: string): Promise<Issue[]> {
     .filter(({ raw }) => /[A-Za-z]{2}/.test(raw) && raw.trim().split(/\s+/).length >= 2);
   const linter = await getGrammarLinter();
   const grammarKeys = new Set<string>();
-  const reliableHarperKinds = new Set(["Agreement", "Grammar", "Punctuation", "Repetition", "Spelling", "Typo", "Usage", "WordChoice", "WordOrder"]);
+  // Technical product pages contain many valid brands, model numbers and acronyms.
+  // Keep Harper in strict grammar-only mode so dictionary guesses never become advice.
+  const reliableHarperKinds = new Set(["Agreement", "Grammar", "Punctuation", "Repetition", "WordOrder"]);
 
   for (const segment of textSegments) {
     const decoded = new DOMParser().parseFromString(`<body>${segment.raw}</body>`, "text/html").body.textContent || segment.raw;
@@ -279,7 +281,11 @@ async function analyseDocument(source: string): Promise<Issue[]> {
     }
 
     if (decoded.trim().split(/\s+/).length < 3 || !(await linter.isLikelyEnglish(decoded))) continue;
-    const lints = await linter.lint(decoded, { language: "plaintext", isolateEnglish: true });
+    const grammarText = decoded
+      .replace(/\b[A-Z]{2,}[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
+      .replace(/\b[A-Za-z]*\d[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
+      .replace(/\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b/g, (token) => " ".repeat(token.length));
+    const lints = await linter.lint(grammarText, { language: "plaintext", isolateEnglish: true });
     for (const lint of lints) {
       const span = lint.span();
       const suggestions = lint.suggestions();
