@@ -413,9 +413,21 @@ export default function Home() {
         <div className="editor-panel">
           <div className="panel-head">
             <div><span className="file-icon">&lt;/&gt;</span><strong>HTML 原始碼</strong><span className="file-name">index.html</span></div>
-            <button className="upload" onClick={() => fileInput.current?.click()}>↑ 上傳 .html</button>
+            <button className="upload" onClick={() => fileInput.current?.click()}>選擇 HTML 檔案</button>
             <input ref={fileInput} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => handleFile(e.target.files?.[0])}/>
           </div>
+          <button
+            className={`upload-guide ${dragging ? "is-dragging" : ""}`}
+            onClick={() => fileInput.current?.click()}
+            onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+            onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setDragging(true); }}
+            onDragLeave={(event) => { event.preventDefault(); setDragging(false); }}
+            onDrop={(event) => { event.preventDefault(); setDragging(false); void handleFile(event.dataTransfer.files?.[0]); }}
+          >
+            <span className="upload-guide-icon" aria-hidden>⇧</span>
+            <span className="upload-guide-copy"><strong>將 HTML 檔案拖曳到這裡</strong><small>或點此選擇檔案 · 支援 .html 與 .htm</small></span>
+            <span className="upload-guide-action">瀏覽檔案</span>
+          </button>
           <div
             className={`code-wrap ${dragging ? "is-dragging" : ""}`}
             onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
