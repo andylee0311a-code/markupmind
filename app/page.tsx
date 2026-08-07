@@ -37,6 +37,50 @@ const sample = `<!DOCTYPE html>
 const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
 const excerptAt = (source: string, line: number) => source.split("\n")[line - 1]?.trim() || "";
 
+const htmlRuleTranslations: Record<string, { title: string; message: string }> = {
+  "area-alt": { title: "圖片熱區缺少替代文字", message: "請為圖片熱區加入 alt，讓輔助工具能說明連結用途。" },
+  "attribute-allowed-values": { title: "屬性值不正確", message: "此屬性使用了不支援的值，請改用該 HTML 元素允許的值。" },
+  "attribute-misuse": { title: "屬性使用位置不正確", message: "這個屬性不適合目前的 HTML 元素，請移除或移至正確元素。" },
+  "close-attr": { title: "屬性未正確結束", message: "屬性的引號或結尾不完整，請檢查這一行的屬性寫法。" },
+  "close-order": { title: "標籤關閉順序錯誤", message: "HTML 標籤必須依巢狀順序關閉，請先關閉最內層的標籤。" },
+  "doctype-html": { title: "DOCTYPE 宣告不正確", message: "文件開頭應使用 <!DOCTYPE html> 宣告 HTML5。" },
+  "element-name": { title: "HTML 元素名稱無效", message: "此標籤名稱不是有效的 HTML 元素，請確認是否拼錯。" },
+  "element-permitted-content": { title: "元素內容不允許", message: "此元素不能放在目前的父元素內，請調整 HTML 巢狀結構。" },
+  "element-permitted-occurrences": { title: "元素出現次數不正確", message: "此元素在目前位置出現過多次，請移除重複內容。" },
+  "element-permitted-order": { title: "元素排列順序不正確", message: "此元素必須依 HTML 規範放在其他指定元素之前或之後。" },
+  "element-required-attributes": { title: "缺少必要屬性", message: "此元素缺少必要屬性；請補上，以確保內容及輔助工具能正確使用。" },
+  "element-required-content": { title: "缺少必要的子元素", message: "此元素內必須包含指定的內容，請補上必要的子元素。" },
+  "heading-level": { title: "標題層級跳號", message: "請依序使用標題層級，避免直接跨越層級，讓頁面結構更清楚。" },
+  "input-missing-label": { title: "表單欄位缺少標籤", message: "請使用 label 或適當的無障礙名稱說明此輸入欄位。" },
+  "missing-doctype": { title: "缺少 DOCTYPE", message: "請在文件第一行加入 <!DOCTYPE html>。" },
+  "no-dup-attr": { title: "屬性重複", message: "同一元素不可重複使用相同屬性，請保留正確的一個。" },
+  "no-dup-id": { title: "ID 重複", message: "頁面中的 id 必須是唯一值，請更改其中一個 id。" },
+  "no-implicit-close": { title: "標籤被隱含關閉", message: "請明確補上結束標籤，避免瀏覽器誤解文件結構。" },
+  "no-missing-references": { title: "參照目標不存在", message: "屬性引用的 id 在頁面中不存在，請確認目標名稱。" },
+  "no-redundant-role": { title: "重複的 ARIA 角色", message: "此元素本身已有相同語意，不需要再指定這個 role。" },
+  "no-unknown-elements": { title: "未知的 HTML 元素", message: "瀏覽器無法辨識此標籤，請確認元素名稱是否拼寫正確。" },
+  "unique-landmark": { title: "頁面地標名稱重複", message: "相同類型的頁面地標應有可區分的無障礙名稱。" },
+  "valid-autocomplete": { title: "自動完成屬性無效", message: "請為 autocomplete 使用瀏覽器支援的有效值。" },
+  "void-content": { title: "空元素含有不允許的內容", message: "此 HTML 元素不能包含內容或結束標籤，請修正標記。" },
+};
+
+function translateHtmlIssue(ruleId: string) {
+  return htmlRuleTranslations[ruleId] || { title: "HTML 語法需要調整", message: `第 ${ruleId} 項規則未通過，請檢查此行的標籤、屬性與巢狀結構。` };
+}
+
+function translateGrammarIssue(kind: string, message: string) {
+  const value = `${kind} ${message}`.toLowerCase();
+  if (/article|determiner|\ba\b.*\ban\b/.test(value)) return { title: "冠詞使用可能不正確", message: "請確認可數名詞前的 a、an 或 the 是否符合語意與發音。" };
+  if (/subject|verb|agreement/.test(value)) return { title: "主詞與動詞可能不一致", message: "請確認動詞形式與主詞的單複數及人稱一致。" };
+  if (/plural|singular|noun number/.test(value)) return { title: "名詞單複數可能不正確", message: "請依句意確認名詞應使用單數或複數形式。" };
+  if (/spelling|misspell|typo/.test(value)) return { title: "英文拼字可能有誤", message: "此單字可能拼寫錯誤，請參考下方建議內容。" };
+  if (/capital|case/.test(value)) return { title: "英文大小寫需要調整", message: "請確認句首、專有名詞或縮寫的大小寫。" };
+  if (/punctuation|comma|period|apostrophe|quote/.test(value)) return { title: "英文標點需要調整", message: "此處的標點符號可能遺漏、重複或位置不正確。" };
+  if (/repeat|duplicate/.test(value)) return { title: "英文單字重複", message: "此處可能出現不必要的重複單字，建議刪除其中一個。" };
+  if (/word choice|usage|confus|homophone/.test(value)) return { title: "英文用字可能不適合", message: "此字詞可能不符合句意，請參考下方建議內容。" };
+  return { title: "英文文法需要調整", message: "偵測到可能的英文文法或用字問題，請參考下方建議內容修正。" };
+}
+
 function analyse(source: string): Issue[] {
   const issues: Issue[] = [];
   const add = (issue: Omit<Issue, "id">) => issues.push({ ...issue, id: `${issue.type}-${issue.line}-${issues.length}` });
@@ -122,11 +166,12 @@ async function analyseDocument(source: string): Promise<Issue[]> {
   for (const result of report.results) {
     for (const message of result.messages) {
       const accessibility = /^(element-required-attributes|wcag\/|prefer-native-element|heading-level|no-redundant-role|valid-autocomplete|input-missing-label|area-alt|svg-focusable|unique-landmark)$/.test(message.ruleId);
+      const translated = translateHtmlIssue(message.ruleId);
       add({
         type: accessibility ? "accessibility" : "html",
         severity: message.severity === 2 ? "error" : "warning",
-        title: message.ruleId.replaceAll("-", " "),
-        message: message.message,
+        title: translated.title,
+        message: translated.message,
         line: message.line,
         excerpt: excerptAt(source, message.line),
       });
@@ -148,11 +193,12 @@ async function analyseDocument(source: string): Promise<Issue[]> {
       const span = lint.span();
       const suggestions = lint.suggestions();
       const line = lineOf(source, segment.offset + Math.min(span.start, segment.raw.length));
+      const translated = translateGrammarIssue(lint.lint_kind_pretty(), lint.message());
       add({
         type: "grammar",
         severity: "warning",
-        title: lint.lint_kind_pretty(),
-        message: lint.message(),
+        title: translated.title,
+        message: translated.message,
         line,
         excerpt: excerptAt(source, line),
         replacement: suggestions[0]?.get_replacement_text(),
