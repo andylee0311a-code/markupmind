@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Issue = {
   id: string;
@@ -94,10 +94,29 @@ export default function Home() {
   const [checked, setChecked] = useState(true);
   const [filter, setFilter] = useState<"all" | Issue["type"]>("all");
   const [selected, setSelected] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [fontScale, setFontScale] = useState<90 | 100 | 110>(100);
   const fileInput = useRef<HTMLInputElement>(null);
   const issues = useMemo(() => (checked ? analyse(code) : []), [code, checked]);
   const visible = filter === "all" ? issues : issues.filter((issue) => issue.type === filter);
   const score = Math.max(0, 100 - issues.reduce((sum, issue) => sum + (issue.severity === "error" ? 12 : issue.severity === "warning" ? 6 : 3), 0));
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("markupmind-theme") as "light" | "dark" | null;
+    const savedScale = Number(localStorage.getItem("markupmind-font-scale"));
+    const initialTheme = savedTheme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    setTheme(initialTheme);
+    if (savedScale === 90 || savedScale === 100 || savedScale === 110) setFontScale(savedScale);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("markupmind-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("markupmind-font-scale", String(fontScale));
+  }, [fontScale]);
 
   const handleFile = async (file?: File) => {
     if (!file) return;
@@ -108,10 +127,20 @@ export default function Home() {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell font-scale-${fontScale}`}>
       <header className="topbar">
         <div className="brand"><span className="brand-mark">✓</span><span>Markup<span>Mind</span></span></div>
-        <div className="privacy"><span className="dot" /> 在您的瀏覽器中安全檢查</div>
+        <div className="header-actions">
+          <div className="font-controls" aria-label="字體大小">
+            <button aria-label="縮小字體" disabled={fontScale === 90} onClick={() => setFontScale(fontScale === 110 ? 100 : 90)}>A−</button>
+            <span>{fontScale}%</span>
+            <button aria-label="放大字體" disabled={fontScale === 110} onClick={() => setFontScale(fontScale === 90 ? 100 : 110)}>A＋</button>
+          </div>
+          <button className="theme-toggle" aria-label={`切換為${theme === "light" ? "深色" : "淺色"}模式`} onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
+            <span aria-hidden>{theme === "light" ? "☾" : "☀"}</span>{theme === "light" ? "深色" : "淺色"}
+          </button>
+          <div className="privacy"><span className="dot" /> 在您的瀏覽器中安全檢查</div>
+        </div>
       </header>
 
       <section className="hero">
@@ -156,6 +185,7 @@ export default function Home() {
       </section>
 
       <footer><span>MarkupMind · HTML quality, made clear.</span><span>HTML 結構　·　英文文法　·　無障礙設計</span></footer>
+      <button className="back-to-top" aria-label="回到頁面頂端" title="回到頂端" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
     </main>
   );
 }
