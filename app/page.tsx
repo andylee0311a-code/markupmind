@@ -275,7 +275,7 @@ export default function Home() {
         <div className="brand-area">
           <img className="dtr-logo" src={dtrLogo} alt="DT Research" />
           <span className="brand-divider" aria-hidden />
-          <div className="brand"><span className="brand-mark">✓</span><span>Markup<span>Mind</span></span></div>
+          <div className="brand"><span className="brand-mark">✓</span><span>網頁<span>大師</span></span></div>
         </div>
         <div className="header-actions">
           <div className="font-controls" aria-label="字體大小">
@@ -338,7 +338,7 @@ export default function Home() {
         </aside>
       </section>
 
-      <footer><span>MarkupMind · HTML quality, made clear.</span><span>Designed by Andy Lee</span><span>HTML 結構　·　英文文法　·　無障礙設計</span></footer>
+      <footer><span>網頁大師 · HTML quality, made clear.</span><span>Designed by Andy Lee</span><span>HTML 結構　·　英文文法　·　無障礙設計</span></footer>
       <button className="back-to-top" aria-label="回到頁面頂端" title="回到頂端" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
     </main>
   );
