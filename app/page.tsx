@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { HtmlValidate } from "html-validate/browser";
+import { Dialect, WorkerLinter } from "harper.js";
+import { binaryInlined } from "harper.js/binaryInlined";
 
 type Issue = {
   id: string;
@@ -89,15 +92,89 @@ function analyse(source: string): Issue[] {
   return issues.sort((a, b) => a.line - b.line);
 }
 
+let grammarLinter: Promise<WorkerLinter> | null = null;
+
+function getGrammarLinter() {
+  if (!grammarLinter) {
+    grammarLinter = (async () => {
+      const linter = new WorkerLinter({ binary: binaryInlined, dialect: Dialect.American });
+      await linter.setup();
+      return linter;
+    })();
+  }
+  return grammarLinter;
+}
+
+async function analyseDocument(source: string): Promise<Issue[]> {
+  const issues: Issue[] = [];
+  const add = (issue: Omit<Issue, "id">) => issues.push({ ...issue, id: `${issue.type}-${issue.line}-${issues.length}` });
+  const validator = new HtmlValidate({
+    extends: ["html-validate:recommended", "html-validate:document"],
+    rules: {
+      "no-inline-style": "off",
+      "prefer-native-element": "off",
+      "require-sri": "off",
+    },
+  });
+  const report = await validator.validateString(source, "index.html");
+
+  for (const result of report.results) {
+    for (const message of result.messages) {
+      const accessibility = /^(element-required-attributes|wcag\/|prefer-native-element|heading-level|no-redundant-role|valid-autocomplete|input-missing-label|area-alt|svg-focusable|unique-landmark)$/.test(message.ruleId);
+      add({
+        type: accessibility ? "accessibility" : "html",
+        severity: message.severity === 2 ? "error" : "warning",
+        title: message.ruleId.replaceAll("-", " "),
+        message: message.message,
+        line: message.line,
+        excerpt: excerptAt(source, message.line),
+      });
+    }
+  }
+
+  const masked = source
+    .replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, (block) => block.replace(/[^\n]/g, " "))
+    .replace(/<!--[\s\S]*?-->/g, (block) => block.replace(/[^\n]/g, " "));
+  const textSegments = [...masked.matchAll(/>([^<>]+)</g)]
+    .map((match) => ({ raw: match[1], offset: (match.index || 0) + 1 }))
+    .filter(({ raw }) => /[A-Za-z]{2}/.test(raw) && raw.trim().split(/\s+/).length >= 2);
+  const linter = await getGrammarLinter();
+
+  for (const segment of textSegments) {
+    const decoded = new DOMParser().parseFromString(`<body>${segment.raw}</body>`, "text/html").body.textContent || segment.raw;
+    const lints = await linter.lint(decoded, { language: "plaintext", isolateEnglish: true });
+    for (const lint of lints) {
+      const span = lint.span();
+      const suggestions = lint.suggestions();
+      const line = lineOf(source, segment.offset + Math.min(span.start, segment.raw.length));
+      add({
+        type: "grammar",
+        severity: "warning",
+        title: lint.lint_kind_pretty(),
+        message: lint.message(),
+        line,
+        excerpt: excerptAt(source, line),
+        replacement: suggestions[0]?.get_replacement_text(),
+      });
+      suggestions.forEach((suggestion) => suggestion.free());
+      span.free();
+      lint.free();
+    }
+  }
+
+  return issues.sort((a, b) => a.line - b.line || (a.type === "html" ? -1 : 1));
+}
+
 export default function Home() {
   const [code, setCode] = useState(sample);
-  const [checked, setChecked] = useState(true);
+  const [checked, setChecked] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [issues, setIssues] = useState<Issue[]>([]);
   const [filter, setFilter] = useState<"all" | Issue["type"]>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [fontScale, setFontScale] = useState<90 | 100 | 110>(100);
   const fileInput = useRef<HTMLInputElement>(null);
-  const issues = useMemo(() => (checked ? analyse(code) : []), [code, checked]);
   const visible = filter === "all" ? issues : issues.filter((issue) => issue.type === filter);
   const score = Math.max(0, 100 - issues.reduce((sum, issue) => sum + (issue.severity === "error" ? 12 : issue.severity === "warning" ? 6 : 3), 0));
 
@@ -118,9 +195,23 @@ export default function Home() {
     localStorage.setItem("markupmind-font-scale", String(fontScale));
   }, [fontScale]);
 
+  const runCheck = async (source = code) => {
+    setChecking(true);
+    setSelected(null);
+    try {
+      setIssues(await analyseDocument(source));
+      setChecked(true);
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const handleFile = async (file?: File) => {
     if (!file) return;
-    setCode(await file.text()); setChecked(true); setSelected(null);
+    const source = await file.text();
+    setCode(source);
+    setChecked(false);
+    await runCheck(source);
   };
   const copyReport = async () => {
     await navigator.clipboard.writeText(issues.map((x) => `[${x.severity.toUpperCase()}] Line ${x.line}: ${x.title} — ${x.message}`).join("\n"));
@@ -160,13 +251,13 @@ export default function Home() {
             <div className="line-nums" aria-hidden>{code.split("\n").map((_, i) => <span key={i}>{i + 1}</span>)}</div>
             <textarea aria-label="HTML 原始碼" spellCheck={false} value={code} onChange={(e) => {setCode(e.target.value); setChecked(false);}} />
           </div>
-          <div className="editor-foot"><span>{code.split("\n").length} 行 · {new Blob([code]).size} bytes</span><button onClick={() => setChecked(true)}>執行檢查 <span>→</span></button></div>
+          <div className="editor-foot"><span>{code.split("\n").length} 行 · {new Blob([code]).size} bytes</span><button onClick={() => runCheck()} disabled={checking}>{checking ? "全面分析中…" : "執行完整檢查"} <span>→</span></button></div>
         </div>
 
         <aside className="results-panel">
           <div className="score-row">
             <div className={`score score-${score < 70 ? "low" : "good"}`}><strong>{score}</strong><small>/100</small></div>
-            <div><strong>{checked ? (issues.length ? "需要一些調整" : "看起來很棒！") : "內容已變更"}</strong><p>{checked ? `找到 ${issues.length} 個可改善項目` : "請重新執行檢查"}</p></div>
+            <div><strong>{checking ? "正在全面分析" : checked ? (issues.length ? "需要一些調整" : "看起來很棒！") : "等待完整檢查"}</strong><p>{checking ? "檢查 HTML5 規則與英文文法…" : checked ? `找到 ${issues.length} 個可改善項目` : "按下按鈕開始分析"}</p></div>
           </div>
           <div className="filters">
             {(["all", "html", "grammar", "accessibility"] as const).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item === "all" ? "全部" : item === "grammar" ? "英文" : item === "accessibility" ? "無障礙" : "HTML"}<span>{item === "all" ? issues.length : issues.filter((x) => x.type === item).length}</span></button>)}
