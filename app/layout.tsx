@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MarkupMind — HTML 與英文品質檢查",
+  title: "網頁大師 — HTML 與英文品質檢查",
   description: "在瀏覽器中檢查 HTML 結構、英文文法與無障礙問題。",
   icons: {
     icon: "/favicon.svg",
@@ -36,4 +36,3 @@ export default function RootLayout({
     </html>
   );
 }
-
