@@ -110,6 +110,22 @@ function findHighConfidenceGrammarIssues(text: string): GrammarFinding[] {
       replacement: `${match[1]} ${replacements[match[2].toLowerCase()]}`,
     };
   });
+  addMatches(/\b(he|she|it)\s+(are|were|have|do|don't)\b/gi, (match) => {
+    const replacements: Record<string, string> = { are: "is", were: "was", have: "has", do: "does", "don't": "doesn't" };
+    return {
+      title: "主詞與動詞不一致",
+      message: `主詞「${match[1]}」是第三人稱單數，動詞形式需要調整。`,
+      replacement: `${match[1]} ${replacements[match[2].toLowerCase()]}`,
+    };
+  });
+  addMatches(/\b(this|that)\s+(are|were|have|do)\b/gi, (match) => {
+    const replacements: Record<string, string> = { are: "is", were: "was", have: "has", do: "does" };
+    return {
+      title: "主詞與動詞不一致",
+      message: `「${match[1]}」是單數指示詞，應搭配單數動詞。`,
+      replacement: `${match[1]} ${replacements[match[2].toLowerCase()]}`,
+    };
+  });
   addMatches(/\b(our|their|these|those)\s+([a-z]+s)\s+(helps|needs|makes|works|provides|allows|supports|is|has|does)\b/gi, (match) => {
     const replacements: Record<string, string> = { is: "are", has: "have", does: "do" };
     const verb = match[3].toLowerCase();
@@ -123,6 +139,26 @@ function findHighConfidenceGrammarIssues(text: string): GrammarFinding[] {
     title: "單複數搭配錯誤",
     message: `「${match[2]}」是複數名詞，there 後面應使用複數動詞。`,
     replacement: `there ${match[1].toLowerCase() === "is" ? "are" : "were"} ${match[2]}`,
+  }));
+  addMatches(/\bthere\s+(is|was)\s+(many|several|multiple|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (match) => ({
+    title: "單複數搭配錯誤",
+    message: `「${match[2]}」表示複數，there 後面應使用複數動詞。`,
+    replacement: `there ${match[1].toLowerCase() === "is" ? "are" : "were"} ${match[2]}`,
+  }));
+  addMatches(/\b(can|could|may|might|must|should|will|would)\s+(runs|provides|supports|includes|offers|allows|helps|works|needs|has|does|goes)\b/gi, (match) => ({
+    title: "情態動詞後的動詞形式錯誤",
+    message: `情態動詞「${match[1]}」後面應使用原形動詞。`,
+    replacement: `${match[1]} ${{ has: "have", does: "do", goes: "go" }[match[2].toLowerCase()] || match[2].replace(/s$/i, "")}`,
+  }));
+  addMatches(/\blook(?:s|ed|ing)?\s+forward\s+to\s+(meet|see|hear|work|receive|discuss)\b/gi, (match) => ({
+    title: "動名詞形式錯誤",
+    message: "「look forward to」後面應接名詞或動名詞（-ing）。",
+    replacement: match[0].replace(new RegExp(`${match[1]}$`, "i"), ({ meet: "meeting", see: "seeing", hear: "hearing", work: "working", receive: "receiving", discuss: "discussing" } as Record<string, string>)[match[1].toLowerCase()]),
+  }));
+  addMatches(/\b(the|this|that|our)\s+(device|system|product|application|computer|display|feature|solution|platform|software)\s+(provide|support|include|offer|allow|help|work|need)\b/gi, (match) => ({
+    title: "主詞與動詞不一致",
+    message: `單數主詞「${match[2]}」應搭配第三人稱單數動詞。`,
+    replacement: `${match[1]} ${match[2]} ${match[3] === "have" ? "has" : `${match[3]}s`}`,
   }));
   addMatches(/\b([a-z]+)\s+\1\b/gi, (match) => ({
     title: "英文單字重複",
@@ -260,7 +296,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
   const grammarKeys = new Set<string>();
   // Technical product pages contain many valid brands, model numbers and acronyms.
   // Keep Harper in strict grammar-only mode so dictionary guesses never become advice.
-  const reliableHarperKinds = new Set(["Agreement", "Grammar", "Punctuation", "Repetition", "WordOrder"]);
+  const reliableHarperKinds = new Set(["Agreement", "Eggcorn", "Grammar", "Malapropism", "Nonstandard", "Punctuation", "Repetition", "Usage", "WordChoice", "WordOrder"]);
 
   for (const segment of textSegments) {
     const decoded = new DOMParser().parseFromString(`<body>${segment.raw}</body>`, "text/html").body.textContent || segment.raw;
