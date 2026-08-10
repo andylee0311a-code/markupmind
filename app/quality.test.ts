@@ -17,6 +17,7 @@ describe("DOM-level visible text extraction", () => {
     const source = '<p>First paragraph here.</p>\n<div>Layout</div>\n<p>Second <strong>paragraph</strong> here.</p>';
     expect(extractTextSegments(source)).toEqual([
       { text: "First paragraph here.", line: 1 },
+      { text: "Layout", line: 2 },
       { text: "Second paragraph here.", line: 3 },
     ]);
   });
@@ -53,6 +54,11 @@ describe("actionable spelling filter", () => {
     const segments = extractTextSegments("<h2>Enviromental</h2>");
     expect(segments).toEqual([{ text: "Enviromental", line: 1 }]);
     expect(getSegmentLintMode(segments[0].text)).toBe("spelling");
+  });
+
+  it("extracts a misspelled label from custom div and span markup", () => {
+    const source = '<section class="spec"><div class="spec-title"><span>Enviromental</span></div></section>';
+    expect(extractTextSegments(source)).toEqual([{ text: "Enviromental", line: 1 }]);
   });
 
   it("rejects model names, acronyms, and approved domain words", () => {

@@ -15,8 +15,9 @@ export type GrammarFinding = {
   index: number;
 };
 
-const BLOCK_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,dt,dd,figcaption,caption,legend,label,button,a,td,th,option";
 const IGNORED_SELECTOR = "script,style,template,noscript,svg,canvas,[hidden],[aria-hidden='true']";
+const PHRASE_CONTAINERS = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "LI", "DT", "DD", "FIGCAPTION", "CAPTION", "LEGEND", "LABEL", "BUTTON", "TD", "TH", "OPTION"]);
+const FALLBACK_CONTAINERS = new Set(["DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "MAIN", "NAV", "ASIDE", "A"]);
 
 const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
 
@@ -53,15 +54,33 @@ export function extractTextSegments(source: string): TextSegment[] {
   document.querySelectorAll(IGNORED_SELECTOR).forEach((element) => element.remove());
   const segments: TextSegment[] = [];
   const seen = new Set<string>();
+  const groups = new Map<Element, string[]>();
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const value = node.textContent?.replace(/\s+/g, " ").trim();
+    if (!value || !/[A-Za-z]{2}/.test(value)) continue;
+    let current = node.parentElement;
+    let fallback: Element | null = null;
+    while (current && current !== document.body) {
+      if (!fallback && FALLBACK_CONTAINERS.has(current.tagName)) fallback = current;
+      if (PHRASE_CONTAINERS.has(current.tagName)) break;
+      current = current.parentElement;
+    }
+    const container = current && PHRASE_CONTAINERS.has(current.tagName) ? current : fallback || node.parentElement;
+    if (!container) continue;
+    groups.set(container, [...(groups.get(container) || []), value]);
+  }
 
-  for (const element of document.querySelectorAll(BLOCK_SELECTOR)) {
-    if (element.parentElement?.closest(BLOCK_SELECTOR)) continue;
-    const text = (element.textContent || "").replace(/\s+/g, " ").trim();
+  for (const [element, parts] of groups) {
+    const text = parts.join(" ").replace(/\s+/g, " ").trim();
     if (!/[A-Za-z]{4}/.test(text)) continue;
     const signature = `${element.tagName}:${text}`;
     if (seen.has(signature)) continue;
     seen.add(signature);
-    segments.push({ text, line: sourceLines.get(element) || 1 });
+    let located: Element | null = element;
+    while (located && !sourceLines.has(located)) located = located.parentElement;
+    segments.push({ text, line: (located && sourceLines.get(located)) || 1 });
   }
 
   return segments;
