@@ -110,3 +110,22 @@ export function getCategoryRatings(issues: QualityIssue[]): CategoryRating[] {
     return { category, label: labels[category], grade, issueCount: categoryIssues.length };
   });
 }
+
+export type ReportIssue = QualityIssue & {
+  title: string;
+  message: string;
+  line: number;
+  replacement?: string;
+};
+
+export function buildQualityReport<T extends ReportIssue>(issues: T[]) {
+  const highPriority = issues.filter((issue) => issue.severity === "error");
+  const english = issues.filter((issue) => issue.type === "grammar" && issue.severity !== "error");
+  const structureAndAccessibility = issues.filter((issue) => issue.type !== "grammar" && issue.severity !== "error");
+  const verdict = highPriority.length
+    ? "目前不建議直接發布"
+    : issues.length
+      ? "建議完成修正後再發布"
+      : "未發現阻擋發布的問題";
+  return { highPriority, english, structureAndAccessibility, verdict };
+}

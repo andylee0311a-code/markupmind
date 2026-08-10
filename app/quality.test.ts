@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { annotateSourceLines, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings } from "./quality";
 
 describe("DOM-level visible text extraction", () => {
   it("keeps a sentence intact across inline markup", () => {
@@ -55,5 +55,16 @@ describe("category ratings", () => {
       ["grammar", "C"],
       ["accessibility", "A"],
     ]);
+  });
+});
+
+describe("structured quality report", () => {
+  it("separates blocking, English, and structural findings", () => {
+    const issue = (type: "html" | "grammar" | "accessibility", severity: "error" | "warning", line: number) => ({ type, severity, line, title: "Test", message: "Test message" });
+    const report = buildQualityReport([issue("html", "error", 2), issue("grammar", "warning", 4), issue("accessibility", "warning", 6)]);
+    expect(report.highPriority.map((item) => item.line)).toEqual([2]);
+    expect(report.english.map((item) => item.line)).toEqual([4]);
+    expect(report.structureAndAccessibility.map((item) => item.line)).toEqual([6]);
+    expect(report.verdict).toBe("目前不建議直接發布");
   });
 });

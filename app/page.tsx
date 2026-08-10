@@ -6,7 +6,7 @@ import { Dialect, WorkerLinter } from "harper.js";
 import { binaryInlined } from "harper.js/binaryInlined";
 import axe from "axe-core";
 import { dtrLogo } from "./dtr-logo";
-import { annotateSourceLines, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings } from "./quality";
 
 type Issue = {
   id: string;
@@ -399,8 +399,6 @@ export default function Home() {
   const [checking, setChecking] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [dragging, setDragging] = useState(false);
-  const [filter, setFilter] = useState<"all" | Issue["type"]>("all");
-  const [selected, setSelected] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     return (localStorage.getItem("markupmind-theme") as "light" | "dark" | null) || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -411,8 +409,9 @@ export default function Home() {
     return saved === 90 || saved === 110 ? saved : 100;
   });
   const fileInput = useRef<HTMLInputElement>(null);
-  const visible = filter === "all" ? issues : issues.filter((issue) => issue.type === filter);
   const ratings = getCategoryRatings(issues);
+  const report = buildQualityReport(issues);
+  const documentTitle = code.match(/<title\b[^>]*>([^<]+)<\/title>/i)?.[1].trim() || "HTML 文件";
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -425,7 +424,6 @@ export default function Home() {
 
   const runCheck = async (source = code) => {
     setChecking(true);
-    setSelected(null);
     try {
       setIssues(await analyseDocument(source));
       setChecked(true);
@@ -446,7 +444,9 @@ export default function Home() {
     await runCheck(source);
   };
   const copyReport = async () => {
-    await navigator.clipboard.writeText(issues.map((x) => `[${x.severity.toUpperCase()}] Line ${x.line}: ${x.title} — ${x.message}`).join("\n"));
+    const table = (items: Issue[]) => items.map((item) => `| ${item.line} | ${item.title} | ${item.replacement || item.message} |`).join("\n") || "無";
+    const bullets = (items: Issue[]) => items.map((item) => `- 第 ${item.line} 行：${item.title} — ${item.replacement || item.message}`).join("\n") || "- 無";
+    await navigator.clipboard.writeText(`檢查完成。這是 **${documentTitle}** 的 HTML 品質檢查報告，共發現 ${issues.length} 項需要確認。\n\n### 高優先問題\n\n| 行號 | 問題 | 建議 |\n| --- | --- | --- |\n${table(report.highPriority)}\n\n### 英文與規格文字\n\n${bullets(report.english)}\n\n### HTML 結構與無障礙\n\n${bullets(report.structureAndAccessibility)}\n\n整體判定：**${report.verdict}**。`);
   };
 
   return (
@@ -516,17 +516,15 @@ export default function Home() {
             </div>
             <div className="rating-summary"><strong>{checking ? "正在全面分析" : checked ? (issues.length ? "需要一些調整" : "三項皆通過") : "等待完整檢查"}</strong><p>{checking ? "檢查 HTML5、英文與 WCAG…" : checked ? `找到 ${issues.length} 個可改善項目` : "按下按鈕開始分析"}</p></div>
           </div>
-          <div className="filters">
-            {(["all", "html", "grammar", "accessibility"] as const).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item === "all" ? "全部" : item === "grammar" ? "英文" : item === "accessibility" ? "無障礙" : "HTML"}<span>{item === "all" ? issues.length : issues.filter((x) => x.type === item).length}</span></button>)}
-          </div>
-          <div className="issue-list">
-            {!checked && <div className="empty">按下「執行檢查」以更新分析結果。</div>}
-            {checked && visible.length === 0 && <div className="empty">這個分類沒有發現問題。</div>}
-            {visible.map((issue) => <button key={issue.id} className={`issue ${selected === issue.id ? "selected" : ""}`} onClick={() => setSelected(selected === issue.id ? null : issue.id)}>
-              <span className={`severity ${issue.severity}`}>{issue.severity === "error" ? "!" : issue.severity === "warning" ? "△" : "i"}</span>
-              <span className="issue-body"><span className="issue-top"><strong>{issue.title}</strong><small>第 {issue.line} 行</small></span><span>{issue.message}</span>{selected === issue.id && <span className="detail"><code>{issue.excerpt}</code>{issue.replacement && <><small>建議</small><code className="replacement">{issue.replacement}</code></>}</span>}</span>
-              <span className="chevron">›</span>
-            </button>)}
+          <div className="report-view">
+            {!checked && <div className="empty">按下「執行完整檢查」以產生稽核報告。</div>}
+            {checked && <>
+              <p className="report-intro">檢查完成。這是 <strong>{documentTitle}</strong> 的 HTML 品質檢查報告，共發現 {issues.length} 項需要確認，包含 HTML 結構、英文內容、SEO 與無障礙問題。</p>
+              <section className="report-section priority-section"><h2>高優先問題</h2>{report.highPriority.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>行號</th><th>問題</th><th>建議</th></tr></thead><tbody>{report.highPriority.map((issue) => <tr key={issue.id}><td>{issue.line}</td><td><strong>{issue.title}</strong><small>{issue.message}</small></td><td>{issue.replacement || issue.message}</td></tr>)}</tbody></table></div> : <p className="report-none">未發現高優先問題。</p>}</section>
+              <section className="report-section"><h2>英文與規格文字</h2>{report.english.length ? <ul>{report.english.map((issue) => <li key={issue.id}><span>第 {issue.line} 行</span><strong>{issue.title}</strong><p>{issue.message}</p>{issue.replacement && <code>建議：{issue.replacement}</code>}</li>)}</ul> : <p className="report-none">未發現英文文字問題。</p>}</section>
+              <section className="report-section"><h2>HTML 結構與無障礙</h2>{report.structureAndAccessibility.length ? <ul>{report.structureAndAccessibility.map((issue) => <li key={issue.id}><span>第 {issue.line} 行</span><strong>{issue.title}</strong><p>{issue.message}</p>{issue.replacement && <code>建議：{issue.replacement}</code>}</li>)}</ul> : <p className="report-none">未發現其他結構或無障礙問題。</p>}</section>
+              <p className={`report-verdict ${report.highPriority.length ? "blocked" : "clear"}`}>整體判定：<strong>{report.verdict}</strong>。</p>
+            </>}
           </div>
           <div className="results-foot"><button onClick={copyReport} disabled={!issues.length}>複製檢查報告</button><span>本機分析 · 無資料上傳</span></div>
         </aside>
