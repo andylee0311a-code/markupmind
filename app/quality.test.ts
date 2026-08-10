@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings } from "./quality";
+import { annotateSourceLines, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings } from "./quality";
 
 describe("DOM-level visible text extraction", () => {
   it("keeps a sentence intact across inline markup", () => {
@@ -11,6 +11,20 @@ describe("DOM-level visible text extraction", () => {
   it("ignores scripts, styles, templates and hidden content", () => {
     const source = '<p>Visible product copy.</p><script>They is wrong.</script><p hidden>He are hidden.</p>';
     expect(extractTextSegments(source).map((item) => item.text)).toEqual(["Visible product copy."]);
+  });
+
+  it("tracks repeated elements to their exact source lines", () => {
+    const source = '<p>First paragraph here.</p>\n<div>Layout</div>\n<p>Second <strong>paragraph</strong> here.</p>';
+    expect(extractTextSegments(source)).toEqual([
+      { text: "First paragraph here.", line: 1 },
+      { text: "Second paragraph here.", line: 3 },
+    ]);
+  });
+
+  it("annotates repeated audit targets with their original line", () => {
+    const source = '<img src="first.png">\n<section>Content</section>\n<img src="second.png">';
+    const audit = new DOMParser().parseFromString(annotateSourceLines(source), "text/html");
+    expect([...audit.querySelectorAll("img")].map((img) => img.dataset.markupmindLine)).toEqual(["1", "3"]);
   });
 });
 

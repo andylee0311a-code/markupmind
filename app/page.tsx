@@ -6,7 +6,7 @@ import { Dialect, WorkerLinter } from "harper.js";
 import { binaryInlined } from "harper.js/binaryInlined";
 import axe from "axe-core";
 import { dtrLogo } from "./dtr-logo";
-import { extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings } from "./quality";
+import { annotateSourceLines, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings } from "./quality";
 
 type Issue = {
   id: string;
@@ -292,7 +292,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
   frame.setAttribute("sandbox", "");
   frame.setAttribute("aria-hidden", "true");
   Object.assign(frame.style, { position: "fixed", left: "-10000px", top: "0", width: "1280px", height: "900px", opacity: "0", pointerEvents: "none" });
-  frame.srcdoc = source;
+  frame.srcdoc = annotateSourceLines(source);
   document.body.appendChild(frame);
   try {
     await new Promise<void>((resolve) => {
@@ -306,10 +306,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
         for (const node of violation.nodes) {
           const selector = String(node.target[0] || "");
           const target = selector ? auditDocument.querySelector(selector) : null;
-          const tag = target?.tagName.toLowerCase();
-          const marker = tag ? `<${tag}` : "";
-          const index = marker ? source.toLowerCase().indexOf(marker) : -1;
-          const line = index >= 0 ? lineOf(source, index) : 1;
+          const line = Number(target?.getAttribute("data-markupmind-line")) || 1;
           const impact = node.impact || violation.impact;
           add({
             type: "accessibility",

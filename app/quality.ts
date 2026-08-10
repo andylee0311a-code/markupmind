@@ -20,9 +20,36 @@ const IGNORED_SELECTOR = "script,style,template,noscript,svg,canvas,[hidden],[ar
 
 const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
 
+function mapSourceLines(source: string, document: Document) {
+  const lines = new WeakMap<Element, number>();
+  const occurrences = new Map<string, number>();
+  const tagPattern = /<([a-z][\w:-]*)\b[^>]*>/gi;
+  for (const match of source.matchAll(tagPattern)) {
+    const tag = match[1].toLowerCase();
+    const occurrence = occurrences.get(tag) || 0;
+    occurrences.set(tag, occurrence + 1);
+    const element = document.getElementsByTagName(tag).item(occurrence);
+    if (element) lines.set(element, lineOf(source, match.index));
+  }
+  return lines;
+}
+
+/** Add source-line metadata to a safe audit copy without modifying user input. */
+export function annotateSourceLines(source: string): string {
+  const document = new DOMParser().parseFromString(source, "text/html");
+  const lines = mapSourceLines(source, document);
+  document.querySelectorAll("*").forEach((element) => {
+    const line = lines.get(element);
+    if (line) element.setAttribute("data-markupmind-line", String(line));
+  });
+  const doctype = /^\s*<!doctype html>/i.test(source) ? "<!DOCTYPE html>\n" : "";
+  return `${doctype}${document.documentElement.outerHTML}`;
+}
+
 /** Extract complete rendered phrases from the DOM, preserving text split by inline tags. */
 export function extractTextSegments(source: string): TextSegment[] {
   const document = new DOMParser().parseFromString(source, "text/html");
+  const sourceLines = mapSourceLines(source, document);
   document.querySelectorAll(IGNORED_SELECTOR).forEach((element) => element.remove());
   const segments: TextSegment[] = [];
   const seen = new Set<string>();
@@ -34,9 +61,7 @@ export function extractTextSegments(source: string): TextSegment[] {
     const signature = `${element.tagName}:${text}`;
     if (seen.has(signature)) continue;
     seen.add(signature);
-    const openingTag = `<${element.tagName.toLowerCase()}`;
-    const index = source.toLowerCase().indexOf(openingTag);
-    segments.push({ text, line: lineOf(source, Math.max(0, index)) });
+    segments.push({ text, line: sourceLines.get(element) || 1 });
   }
 
   return segments;
