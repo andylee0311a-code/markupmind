@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings, isActionableSpelling } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling } from "./quality";
 
 describe("DOM-level visible text extraction", () => {
   it("keeps a sentence intact across inline markup", () => {
@@ -47,6 +47,12 @@ describe("actionable spelling filter", () => {
   it("accepts clear spelling corrections", () => {
     expect(isActionableSpelling("Enviromental", "Environmental")).toBe(true);
     expect(isActionableSpelling("peripherials", "peripherals")).toBe(true);
+  });
+
+  it("routes a one-word heading into spelling-only analysis", () => {
+    const segments = extractTextSegments("<h2>Enviromental</h2>");
+    expect(segments).toEqual([{ text: "Enviromental", line: 1 }]);
+    expect(getSegmentLintMode(segments[0].text)).toBe("spelling");
   });
 
   it("rejects model names, acronyms, and approved domain words", () => {

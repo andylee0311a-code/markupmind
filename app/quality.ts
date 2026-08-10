@@ -57,7 +57,7 @@ export function extractTextSegments(source: string): TextSegment[] {
   for (const element of document.querySelectorAll(BLOCK_SELECTOR)) {
     if (element.parentElement?.closest(BLOCK_SELECTOR)) continue;
     const text = (element.textContent || "").replace(/\s+/g, " ").trim();
-    if (!/[A-Za-z]{2}/.test(text) || text.split(/\s+/).length < 2) continue;
+    if (!/[A-Za-z]{4}/.test(text)) continue;
     const signature = `${element.tagName}:${text}`;
     if (seen.has(signature)) continue;
     seen.add(signature);
@@ -129,6 +129,12 @@ export function isActionableSpelling(token: string, replacement: string) {
   if (word === word.toUpperCase()) return false;
   const allowedDistance = word.length >= 9 ? 2 : 1;
   return editDistance(word, suggestion) <= allowedDistance;
+}
+
+export function getSegmentLintMode(text: string): "spelling" | "full" | "skip" {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!/[A-Za-z]{4}/.test(text)) return "skip";
+  return words.length < 3 ? "spelling" : "full";
 }
 
 export type CategoryRating = { category: IssueCategory; label: string; grade: "A" | "B" | "C" | "D" | "E"; issueCount: number };

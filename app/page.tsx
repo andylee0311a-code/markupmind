@@ -6,7 +6,7 @@ import { Dialect, WorkerLinter } from "harper.js";
 import { binaryInlined } from "harper.js/binaryInlined";
 import axe from "axe-core";
 import { dtrLogo } from "./dtr-logo";
-import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings, isActionableSpelling } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling } from "./quality";
 
 type Issue = {
   id: string;
@@ -348,7 +348,8 @@ async function analyseDocument(source: string): Promise<Issue[]> {
       });
     }
 
-    if (decoded.trim().split(/\s+/).length < 3 || !(await linter.isLikelyEnglish(decoded))) continue;
+    const lintMode = getSegmentLintMode(decoded);
+    if (lintMode === "skip" || (lintMode === "full" && !(await linter.isLikelyEnglish(decoded)))) continue;
     const grammarText = decoded
       .replace(/\b[A-Z]{2,}[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
       .replace(/\b[A-Za-z]*\d[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
@@ -360,7 +361,8 @@ async function analyseDocument(source: string): Promise<Issue[]> {
       const kind = lint.lint_kind_pretty();
       const replacement = suggestions[0]?.get_replacement_text();
       const originalToken = grammarText.slice(span.start, span.end);
-      if (!reliableHarperKinds.has(kind) || !replacement || (kind === "Spelling" && !isActionableSpelling(originalToken, replacement))) {
+      const allowedKind = lintMode === "spelling" ? kind === "Spelling" : reliableHarperKinds.has(kind);
+      if (!allowedKind || !replacement || (kind === "Spelling" && !isActionableSpelling(originalToken, replacement))) {
         suggestions.forEach((suggestion) => suggestion.free());
         span.free();
         lint.free();
