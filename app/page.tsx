@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { HtmlValidate } from "html-validate/browser";
 import { Dialect, WorkerLinter } from "harper.js";
 import { binaryInlined } from "harper.js/binaryInlined";
+import axe from "axe-core";
 import { dtrLogo } from "./dtr-logo";
+import { extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings } from "./quality";
 
 type Issue = {
   id: string;
@@ -83,7 +85,7 @@ function translateGrammarIssue(kind: string, message: string) {
 
 type GrammarFinding = Pick<Issue, "title" | "message" | "replacement"> & { index: number };
 
-function findHighConfidenceGrammarIssues(text: string): GrammarFinding[] {
+export function findHighConfidenceGrammarIssues(text: string): GrammarFinding[] {
   const findings: GrammarFinding[] = [];
   const addMatches = (
     pattern: RegExp,
@@ -189,7 +191,7 @@ function findHighConfidenceGrammarIssues(text: string): GrammarFinding[] {
   return findings;
 }
 
-function analyse(source: string): Issue[] {
+export function analyse(source: string): Issue[] {
   const issues: Issue[] = [];
   const add = (issue: Omit<Issue, "id">) => issues.push({ ...issue, id: `${issue.type}-${issue.line}-${issues.length}` });
 
@@ -286,12 +288,45 @@ async function analyseDocument(source: string): Promise<Issue[]> {
     }
   }
 
-  const masked = source
-    .replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/<!--[\s\S]*?-->/g, (block) => block.replace(/[^\n]/g, " "));
-  const textSegments = [...masked.matchAll(/>([^<>]+)</g)]
-    .map((match) => ({ raw: match[1], offset: (match.index || 0) + 1 }))
-    .filter(({ raw }) => /[A-Za-z]{2}/.test(raw) && raw.trim().split(/\s+/).length >= 2);
+  const frame = document.createElement("iframe");
+  frame.setAttribute("sandbox", "");
+  frame.setAttribute("aria-hidden", "true");
+  Object.assign(frame.style, { position: "fixed", left: "-10000px", top: "0", width: "1280px", height: "900px", opacity: "0", pointerEvents: "none" });
+  frame.srcdoc = source;
+  document.body.appendChild(frame);
+  try {
+    await new Promise<void>((resolve) => {
+      frame.addEventListener("load", () => resolve(), { once: true });
+      window.setTimeout(resolve, 800);
+    });
+    const auditDocument = frame.contentDocument;
+    if (auditDocument?.documentElement) {
+      const audit = await axe.run(auditDocument.documentElement, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"] } });
+      for (const violation of audit.violations) {
+        for (const node of violation.nodes) {
+          const selector = String(node.target[0] || "");
+          const target = selector ? auditDocument.querySelector(selector) : null;
+          const tag = target?.tagName.toLowerCase();
+          const marker = tag ? `<${tag}` : "";
+          const index = marker ? source.toLowerCase().indexOf(marker) : -1;
+          const line = index >= 0 ? lineOf(source, index) : 1;
+          const impact = node.impact || violation.impact;
+          add({
+            type: "accessibility",
+            severity: impact === "critical" || impact === "serious" ? "error" : impact === "moderate" ? "warning" : "suggestion",
+            title: `無障礙：${violation.help}`,
+            message: `${violation.description} ${node.failureSummary || ""}`.trim(),
+            line,
+            excerpt: excerptAt(source, line),
+          });
+        }
+      }
+    }
+  } finally {
+    frame.remove();
+  }
+
+  const textSegments = extractTextSegments(source);
   const linter = await getGrammarLinter();
   const grammarKeys = new Set<string>();
   // Technical product pages contain many valid brands, model numbers and acronyms.
@@ -299,9 +334,9 @@ async function analyseDocument(source: string): Promise<Issue[]> {
   const reliableHarperKinds = new Set(["Agreement", "Eggcorn", "Grammar", "Malapropism", "Nonstandard", "Punctuation", "Repetition", "Usage", "WordChoice", "WordOrder"]);
 
   for (const segment of textSegments) {
-    const decoded = new DOMParser().parseFromString(`<body>${segment.raw}</body>`, "text/html").body.textContent || segment.raw;
-    for (const finding of findHighConfidenceGrammarIssues(decoded)) {
-      const line = lineOf(source, segment.offset + Math.min(finding.index, segment.raw.length));
+    const decoded = segment.text;
+    for (const finding of findGrammarIssues(decoded)) {
+      const line = segment.line;
       const key = `${line}-${finding.title}-${finding.replacement || ""}`;
       if (grammarKeys.has(key)) continue;
       grammarKeys.add(key);
@@ -332,7 +367,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
         lint.free();
         continue;
       }
-      const line = lineOf(source, segment.offset + Math.min(span.start, segment.raw.length));
+      const line = segment.line;
       const translated = translateGrammarIssue(kind, lint.message());
       const replacement = suggestions[0]?.get_replacement_text();
       const key = `${line}-${translated.title}-${replacement || ""}`;
@@ -369,19 +404,18 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   const [filter, setFilter] = useState<"all" | Issue["type"]>("all");
   const [selected, setSelected] = useState<string | null>(null);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [fontScale, setFontScale] = useState<90 | 100 | 110>(100);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    return (localStorage.getItem("markupmind-theme") as "light" | "dark" | null) || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  });
+  const [fontScale, setFontScale] = useState<90 | 100 | 110>(() => {
+    if (typeof window === "undefined") return 100;
+    const saved = Number(localStorage.getItem("markupmind-font-scale"));
+    return saved === 90 || saved === 110 ? saved : 100;
+  });
   const fileInput = useRef<HTMLInputElement>(null);
   const visible = filter === "all" ? issues : issues.filter((issue) => issue.type === filter);
-  const score = Math.max(0, 100 - issues.reduce((sum, issue) => sum + (issue.severity === "error" ? 12 : issue.severity === "warning" ? 6 : 3), 0));
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("markupmind-theme") as "light" | "dark" | null;
-    const savedScale = Number(localStorage.getItem("markupmind-font-scale"));
-    const initialTheme = savedTheme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    setTheme(initialTheme);
-    if (savedScale === 90 || savedScale === 100 || savedScale === 110) setFontScale(savedScale);
-  }, []);
+  const ratings = getCategoryRatings(issues);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -479,9 +513,11 @@ export default function Home() {
         </div>
 
         <aside className="results-panel">
-          <div className="score-row">
-            <div className={`score score-${score < 70 ? "low" : "good"}`}><strong>{score}</strong><small>/100</small></div>
-            <div><strong>{checking ? "正在全面分析" : checked ? (issues.length ? "需要一些調整" : "看起來很棒！") : "等待完整檢查"}</strong><p>{checking ? "檢查 HTML5 規則與英文文法…" : checked ? `找到 ${issues.length} 個可改善項目` : "按下按鈕開始分析"}</p></div>
+          <div className="score-row ratings-row">
+            <div className="ratings" aria-label="分項品質評級">
+              {ratings.map((rating) => <div className={`rating grade-${rating.grade}`} key={rating.category}><strong>{rating.grade}</strong><span>{rating.label}</span><small>{rating.issueCount} 項</small></div>)}
+            </div>
+            <div className="rating-summary"><strong>{checking ? "正在全面分析" : checked ? (issues.length ? "需要一些調整" : "三項皆通過") : "等待完整檢查"}</strong><p>{checking ? "檢查 HTML5、英文與 WCAG…" : checked ? `找到 ${issues.length} 個可改善項目` : "按下按鈕開始分析"}</p></div>
           </div>
           <div className="filters">
             {(["all", "html", "grammar", "accessibility"] as const).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item === "all" ? "全部" : item === "grammar" ? "英文" : item === "accessibility" ? "無障礙" : "HTML"}<span>{item === "all" ? issues.length : issues.filter((x) => x.type === item).length}</span></button>)}
@@ -499,7 +535,7 @@ export default function Home() {
         </aside>
       </section>
 
-      <footer><span>網頁大師 · HTML quality, made clear.</span><span>Designed by Andy Lee</span><span>HTML 結構　·　英文文法　·　無障礙設計</span></footer>
+      <footer><span>網頁大師 · HTML quality, made clear.</span><span>Designed by Andy Lee</span><span>HTML 結構 · 英文文法 · 無障礙設計</span></footer>
       <button className="back-to-top" aria-label="回到頁面頂端" title="回到頂端" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>↑</button>
     </main>
   );

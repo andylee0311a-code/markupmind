@@ -1,0 +1,87 @@
+export type IssueCategory = "html" | "grammar" | "accessibility";
+export type IssueSeverity = "error" | "warning" | "suggestion";
+
+export type QualityIssue = {
+  type: IssueCategory;
+  severity: IssueSeverity;
+};
+
+export type TextSegment = { text: string; line: number };
+
+export type GrammarFinding = {
+  title: string;
+  message: string;
+  replacement?: string;
+  index: number;
+};
+
+const BLOCK_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,dt,dd,figcaption,caption,legend,label,button,a,td,th,option";
+const IGNORED_SELECTOR = "script,style,template,noscript,svg,canvas,[hidden],[aria-hidden='true']";
+
+const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
+
+/** Extract complete rendered phrases from the DOM, preserving text split by inline tags. */
+export function extractTextSegments(source: string): TextSegment[] {
+  const document = new DOMParser().parseFromString(source, "text/html");
+  document.querySelectorAll(IGNORED_SELECTOR).forEach((element) => element.remove());
+  const segments: TextSegment[] = [];
+  const seen = new Set<string>();
+
+  for (const element of document.querySelectorAll(BLOCK_SELECTOR)) {
+    if (element.parentElement?.closest(BLOCK_SELECTOR)) continue;
+    const text = (element.textContent || "").replace(/\s+/g, " ").trim();
+    if (!/[A-Za-z]{2}/.test(text) || text.split(/\s+/).length < 2) continue;
+    const signature = `${element.tagName}:${text}`;
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    const openingTag = `<${element.tagName.toLowerCase()}`;
+    const index = source.toLowerCase().indexOf(openingTag);
+    segments.push({ text, line: lineOf(source, Math.max(0, index)) });
+  }
+
+  return segments;
+}
+
+export function findHighConfidenceGrammarIssues(text: string): GrammarFinding[] {
+  const findings: GrammarFinding[] = [];
+  const addMatches = (pattern: RegExp, create: (match: RegExpExecArray) => Omit<GrammarFinding, "index">) => {
+    for (const match of text.matchAll(pattern)) findings.push({ ...create(match), index: match.index });
+  };
+
+  addMatches(/\b(a)\s+(apple|answer|idea|image|issue|element|error|option|example|application|email|hour|honest)\b/gi, (match) => ({ title: "冠詞使用錯誤", message: `「${match[2]}」以母音音素開頭，前面應使用 an。`, replacement: `an ${match[2]}` }));
+  addMatches(/\b(an)\s+(user|university|unique|useful|website|page|button|form|report|component)\b/gi, (match) => ({ title: "冠詞使用錯誤", message: `「${match[2]}」以子音音素開頭，前面應使用 a。`, replacement: `a ${match[2]}` }));
+  addMatches(/\b(we|you|they|these|those)\s+(is|was|has|does)\b/gi, (match) => {
+    const replacements: Record<string, string> = { is: "are", was: "were", has: "have", does: "do" };
+    return { title: "主詞與動詞不一致", message: `主詞「${match[1]}」應搭配複數動詞。`, replacement: `${match[1]} ${replacements[match[2].toLowerCase()]}` };
+  });
+  addMatches(/\b(he|she|it)\s+(are|were|have|do|don't)\b/gi, (match) => {
+    const replacements: Record<string, string> = { are: "is", were: "was", have: "has", do: "does", "don't": "doesn't" };
+    return { title: "主詞與動詞不一致", message: `主詞「${match[1]}」是第三人稱單數，動詞形式需要調整。`, replacement: `${match[1]} ${replacements[match[2].toLowerCase()]}` };
+  });
+  addMatches(/\b(this|that)\s+(are|were|have|do)\b/gi, (match) => {
+    const replacements: Record<string, string> = { are: "is", were: "was", have: "has", do: "does" };
+    return { title: "主詞與動詞不一致", message: `「${match[1]}」是單數指示詞，應搭配單數動詞。`, replacement: `${match[1]} ${replacements[match[2].toLowerCase()]}` };
+  });
+  addMatches(/\bthere\s+(is|was)\s+(many|several|multiple|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (match) => ({ title: "單複數搭配錯誤", message: `「${match[2]}」表示複數，there 後面應使用複數動詞。`, replacement: `there ${match[1].toLowerCase() === "is" ? "are" : "were"} ${match[2]}` }));
+  addMatches(/\b(can|could|may|might|must|should|will|would)\s+(runs|provides|supports|includes|offers|allows|helps|works|needs|has|does|goes)\b/gi, (match) => ({ title: "情態動詞後的動詞形式錯誤", message: `情態動詞「${match[1]}」後面應使用原形動詞。`, replacement: `${match[1]} ${{ has: "have", does: "do", goes: "go" }[match[2].toLowerCase()] || match[2].replace(/s$/i, "")}` }));
+  addMatches(/\blook(?:s|ed|ing)?\s+forward\s+to\s+(meet|see|hear|work|receive|discuss)\b/gi, (match) => ({ title: "動名詞形式錯誤", message: "「look forward to」後面應接名詞或動名詞（-ing）。", replacement: match[0].replace(new RegExp(`${match[1]}$`, "i"), ({ meet: "meeting", see: "seeing", hear: "hearing", work: "working", receive: "receiving", discuss: "discussing" } as Record<string, string>)[match[1].toLowerCase()]) }));
+  addMatches(/\b(the|this|that|our)\s+(device|system|product|application|computer|display|feature|solution|platform|software)\s+(provide|support|include|offer|allow|help|work|need)\b/gi, (match) => ({ title: "主詞與動詞不一致", message: `單數主詞「${match[2]}」應搭配第三人稱單數動詞。`, replacement: `${match[1]} ${match[2]} ${match[3]}s` }));
+  addMatches(/\b([a-z]+)\s+\1\b/gi, (match) => ({ title: "英文單字重複", message: `「${match[1]}」連續出現兩次，通常只需保留一次。`, replacement: match[1] }));
+  addMatches(/\b(could|should|would|must)\s+of\b/gi, (match) => ({ title: "助動詞片語錯誤", message: `「${match[1]} of」應改為「${match[1]} have」。`, replacement: `${match[1]} have` }));
+  addMatches(/\b(more|most)\s+(better|best|worse|worst|easier|easiest|faster|fastest)\b/gi, (match) => ({ title: "比較級重複", message: `「${match[2]}」本身已是比較級或最高級，不需再加 ${match[1]}。`, replacement: match[2] }));
+  addMatches(/\b(build|create|design|make)\s+(better\s+|new\s+|simple\s+|responsive\s+)?(website|page|application|form|button|component|report)\b/gi, (match) => ({ title: "可數名詞缺少冠詞", message: `單數可數名詞「${match[3]}」前通常需要 a、an 或 the。`, replacement: `${match[1]} a ${match[2] || ""}${match[3]}` }));
+  addMatches(/\bsave your time\b/gi, () => ({ title: "英文用字不自然", message: "若要表達節省使用者時間，建議使用「save you time」。", replacement: "save you time" }));
+  return findings;
+}
+
+export type CategoryRating = { category: IssueCategory; label: string; grade: "A" | "B" | "C" | "D" | "E"; issueCount: number };
+
+export function getCategoryRatings(issues: QualityIssue[]): CategoryRating[] {
+  const labels: Record<IssueCategory, string> = { html: "HTML 結構", grammar: "英文品質", accessibility: "無障礙" };
+  return (Object.keys(labels) as IssueCategory[]).map((category) => {
+    const categoryIssues = issues.filter((issue) => issue.type === category);
+    const penalty = categoryIssues.reduce((sum, issue) => sum + (issue.severity === "error" ? 3 : issue.severity === "warning" ? 2 : 1), 0);
+    const grade = penalty === 0 ? "A" : penalty <= 2 ? "B" : penalty <= 5 ? "C" : penalty <= 9 ? "D" : "E";
+    return { category, label: labels[category], grade, issueCount: categoryIssues.length };
+  });
+}
