@@ -354,7 +354,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
       .replace(/\b[A-Z]{2,}[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
       .replace(/\b[A-Za-z]*\d[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
       .replace(/\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b/g, (token) => " ".repeat(token.length));
-    const lints = await linter.lint(grammarText, { language: "plaintext", isolateEnglish: true });
+    const lints = await linter.lint(grammarText, { language: "plaintext", isolateEnglish: lintMode === "full" });
     for (const lint of lints) {
       const span = lint.span();
       const suggestions = lint.suggestions();

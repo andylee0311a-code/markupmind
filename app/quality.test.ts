@@ -56,6 +56,12 @@ describe("actionable spelling filter", () => {
     expect(getSegmentLintMode(segments[0].text)).toBe("spelling");
   });
 
+  it("routes the exact product-page heading into spelling-only analysis", () => {
+    const segments = extractTextSegments("<h5><span>Mechanical and Enviromental</span><i></i></h5>");
+    expect(segments).toEqual([{ text: "Mechanical and Enviromental", line: 1 }]);
+    expect(getSegmentLintMode(segments[0].text)).toBe("spelling");
+  });
+
   it("extracts a misspelled label from custom div and span markup", () => {
     const source = '<section class="spec"><div class="spec-title"><span>Enviromental</span></div></section>';
     expect(extractTextSegments(source)).toEqual([{ text: "Enviromental", line: 1 }]);
