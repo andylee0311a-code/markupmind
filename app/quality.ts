@@ -99,6 +99,38 @@ export function findHighConfidenceGrammarIssues(text: string): GrammarFinding[] 
   return findings;
 }
 
+const DOMAIN_WORDS = new Set([
+  "dtresearch", "intel", "nvidia", "qualcomm", "windows", "android", "bluetooth", "wifi", "ethernet",
+  "rugged", "medical", "tablet", "tablets", "touchscreen", "fanless", "healthcare", "workstation",
+  "photoswipe", "lightbox", "webpage", "datasheet", "middleware", "firmware", "barcode", "webcam",
+]);
+
+function editDistance(left: string, right: string) {
+  const a = left.toLowerCase();
+  const b = right.toLowerCase();
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let previous = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const saved = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1));
+      previous = saved;
+    }
+  }
+  return row[b.length];
+}
+
+export function isActionableSpelling(token: string, replacement: string) {
+  const word = token.trim();
+  const suggestion = replacement.trim();
+  if (!/^[A-Za-z]{4,}$/.test(word) || !/^[A-Za-z]{4,}$/.test(suggestion)) return false;
+  if (DOMAIN_WORDS.has(word.toLowerCase())) return false;
+  if (word === word.toUpperCase()) return false;
+  const allowedDistance = word.length >= 9 ? 2 : 1;
+  return editDistance(word, suggestion) <= allowedDistance;
+}
+
 export type CategoryRating = { category: IssueCategory; label: string; grade: "A" | "B" | "C" | "D" | "E"; issueCount: number };
 
 export function getCategoryRatings(issues: QualityIssue[]): CategoryRating[] {

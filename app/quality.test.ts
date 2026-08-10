@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings, isActionableSpelling } from "./quality";
 
 describe("DOM-level visible text extraction", () => {
   it("keeps a sentence intact across inline markup", () => {
@@ -40,6 +40,20 @@ describe("high-confidence English rules", () => {
 
   it.each(["Our business helps customers.", "The news is important.", "This analysis works well."])("does not treat singular s-ending nouns as plural: %s", (text) => {
     expect(findHighConfidenceGrammarIssues(text)).toHaveLength(0);
+  });
+});
+
+describe("actionable spelling filter", () => {
+  it("accepts clear spelling corrections", () => {
+    expect(isActionableSpelling("Enviromental", "Environmental")).toBe(true);
+    expect(isActionableSpelling("peripherials", "peripherals")).toBe(true);
+  });
+
+  it("rejects model names, acronyms, and approved domain words", () => {
+    expect(isActionableSpelling("DT373T", "DT373")).toBe(false);
+    expect(isActionableSpelling("NVIS", "NIVS")).toBe(false);
+    expect(isActionableSpelling("rugged", "ruggedly")).toBe(false);
+    expect(isActionableSpelling("PhotoSwipe", "Photoswipe")).toBe(false);
   });
 });
 

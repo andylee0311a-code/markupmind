@@ -6,7 +6,7 @@ import { Dialect, WorkerLinter } from "harper.js";
 import { binaryInlined } from "harper.js/binaryInlined";
 import axe from "axe-core";
 import { dtrLogo } from "./dtr-logo";
-import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings, isActionableSpelling } from "./quality";
 
 type Issue = {
   id: string;
@@ -328,7 +328,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
   const grammarKeys = new Set<string>();
   // Technical product pages contain many valid brands, model numbers and acronyms.
   // Keep Harper in strict grammar-only mode so dictionary guesses never become advice.
-  const reliableHarperKinds = new Set(["Agreement", "Eggcorn", "Grammar", "Malapropism", "Nonstandard", "Punctuation", "Repetition", "Usage", "WordChoice", "WordOrder"]);
+  const reliableHarperKinds = new Set(["Agreement", "Eggcorn", "Grammar", "Malapropism", "Nonstandard", "Punctuation", "Repetition", "Spelling", "Usage", "WordChoice", "WordOrder"]);
 
   for (const segment of textSegments) {
     const decoded = segment.text;
@@ -358,7 +358,9 @@ async function analyseDocument(source: string): Promise<Issue[]> {
       const span = lint.span();
       const suggestions = lint.suggestions();
       const kind = lint.lint_kind_pretty();
-      if (!reliableHarperKinds.has(kind) || suggestions.length === 0) {
+      const replacement = suggestions[0]?.get_replacement_text();
+      const originalToken = grammarText.slice(span.start, span.end);
+      if (!reliableHarperKinds.has(kind) || !replacement || (kind === "Spelling" && !isActionableSpelling(originalToken, replacement))) {
         suggestions.forEach((suggestion) => suggestion.free());
         span.free();
         lint.free();
@@ -366,7 +368,6 @@ async function analyseDocument(source: string): Promise<Issue[]> {
       }
       const line = segment.line;
       const translated = translateGrammarIssue(kind, lint.message());
-      const replacement = suggestions[0]?.get_replacement_text();
       const key = `${line}-${translated.title}-${replacement || ""}`;
       if (grammarKeys.has(key)) {
         suggestions.forEach((suggestion) => suggestion.free());
