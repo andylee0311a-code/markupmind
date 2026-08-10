@@ -10,7 +10,7 @@ import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighC
 
 type Issue = {
   id: string;
-  type: "html" | "grammar" | "accessibility";
+  type: "html" | "grammar" | "seo" | "accessibility";
   severity: "error" | "warning" | "suggestion";
   title: string;
   message: string;
@@ -288,6 +288,30 @@ async function analyseDocument(source: string): Promise<Issue[]> {
     }
   }
 
+  const seoChecks = [
+    { pattern: /<title\b[^>]*>[\s\S]*?<\/title>/gi, title: "缺少 SEO 頁面標題", message: "請加入唯一且能說明頁面內容的 <title>。", severity: "error" as const },
+    { pattern: /<meta\s+[^>]*name=["']description["'][^>]*>/gi, title: "缺少 Meta Description", message: "請加入約 120–160 字元的頁面摘要。", severity: "warning" as const },
+    { pattern: /<link\s+[^>]*rel=["']canonical["'][^>]*>/gi, title: "缺少 Canonical URL", message: "請加入 canonical，避免搜尋引擎判定為重複頁面。", severity: "warning" as const },
+    { pattern: /<meta\s+[^>]*property=["']og:title["'][^>]*>/gi, title: "缺少 Open Graph 標題", message: "請加入 og:title，改善社群分享預覽。", severity: "suggestion" as const },
+    { pattern: /<meta\s+[^>]*property=["']og:description["'][^>]*>/gi, title: "缺少 Open Graph 描述", message: "請加入 og:description，讓分享摘要更完整。", severity: "suggestion" as const },
+    { pattern: /<meta\s+[^>]*property=["']og:image["'][^>]*>/gi, title: "缺少 Open Graph 圖片", message: "請加入完整 HTTPS 網址的 og:image。", severity: "suggestion" as const },
+  ];
+  for (const check of seoChecks) {
+    const matches = [...source.matchAll(check.pattern)];
+    if (!matches.length) add({ type: "seo", severity: check.severity, title: check.title, message: check.message, line: 1, excerpt: excerptAt(source, 1) });
+  }
+  const titles = [...source.matchAll(/<title\b[^>]*>[\s\S]*?<\/title>/gi)];
+  for (const duplicate of titles.slice(1)) {
+    const line = lineOf(source, duplicate.index);
+    add({ type: "seo", severity: "error", title: "同一頁出現多個 <title>", message: "搜尋引擎無法判斷主要標題，請只保留一個 <title>。", line, excerpt: excerptAt(source, line) });
+  }
+  const h1s = [...source.matchAll(/<h1\b[^>]*>/gi)];
+  if (!h1s.length) add({ type: "seo", severity: "warning", title: "缺少主要 H1 標題", message: "每個產品頁建議使用一個清楚的 H1。", line: 1, excerpt: excerptAt(source, 1) });
+  if (h1s.length > 1) {
+    const line = lineOf(source, h1s[1].index);
+    add({ type: "seo", severity: "warning", title: "頁面包含多個 H1", message: "請確認主要內容階層，通常產品頁應只有一個主要 H1。", line, excerpt: excerptAt(source, line) });
+  }
+
   const frame = document.createElement("iframe");
   frame.setAttribute("sandbox", "");
   frame.setAttribute("aria-hidden", "true");
@@ -402,6 +426,7 @@ export default function Home() {
   const [checking, setChecking] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [resultTab, setResultTab] = useState<"overview" | Issue["type"]>("overview");
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     return (localStorage.getItem("markupmind-theme") as "light" | "dark" | null) || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -415,6 +440,7 @@ export default function Home() {
   const ratings = getCategoryRatings(issues);
   const report = buildQualityReport(issues);
   const documentTitle = code.match(/<title\b[^>]*>([^<]+)<\/title>/i)?.[1].trim() || "HTML 文件";
+  const tabIssues = resultTab === "overview" ? [] : issues.filter((issue) => issue.type === resultTab);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -427,6 +453,7 @@ export default function Home() {
 
   const runCheck = async (source = code) => {
     setChecking(true);
+    setResultTab("overview");
     try {
       setIssues(await analyseDocument(source));
       setChecked(true);
@@ -449,7 +476,7 @@ export default function Home() {
   const copyReport = async () => {
     const table = (items: Issue[]) => items.map((item) => `| ${item.line} | ${item.title} | ${item.replacement || item.message} |`).join("\n") || "無";
     const bullets = (items: Issue[]) => items.map((item) => `- 第 ${item.line} 行：${item.title} — ${item.replacement || item.message}`).join("\n") || "- 無";
-    await navigator.clipboard.writeText(`檢查完成。這是 **${documentTitle}** 的 HTML 品質檢查報告，共發現 ${issues.length} 項需要確認。\n\n### 高優先問題\n\n| 行號 | 問題 | 建議 |\n| --- | --- | --- |\n${table(report.highPriority)}\n\n### 英文與規格文字\n\n${bullets(report.english)}\n\n### HTML 結構與無障礙\n\n${bullets(report.structureAndAccessibility)}\n\n整體判定：**${report.verdict}**。`);
+    await navigator.clipboard.writeText(`檢查完成。這是 **${documentTitle}** 的 HTML 品質檢查報告，共發現 ${issues.length} 項需要確認。\n\n### 高優先問題\n\n| 行號 | 問題 | 建議 |\n| --- | --- | --- |\n${table(report.highPriority)}\n\n### HTML 結構\n\n${bullets(issues.filter((x) => x.type === "html"))}\n\n### 英文內容\n\n${bullets(issues.filter((x) => x.type === "grammar"))}\n\n### SEO\n\n${bullets(issues.filter((x) => x.type === "seo"))}\n\n### 無障礙\n\n${bullets(issues.filter((x) => x.type === "accessibility"))}\n\n整體判定：**${report.verdict}**。`);
   };
 
   return (
@@ -475,7 +502,6 @@ export default function Home() {
 
       <section className="hero">
         <p className="eyebrow">HTML + ENGLISH QUALITY CHECK</p>
-        <h1>讓每一行程式碼，<br/><em>說正確的話。</em></h1>
         <p className="subhead">一次找出 HTML 結構、無障礙與英文文法問題。<br/>檔案只在您的裝置上分析，不會上傳。</p>
       </section>
 
@@ -517,16 +543,17 @@ export default function Home() {
             <div className="ratings" aria-label="分項品質評級">
               {ratings.map((rating) => <div className={`rating grade-${rating.grade}`} key={rating.category}><strong>{rating.grade}</strong><span>{rating.label}</span><small>{rating.issueCount} 項</small></div>)}
             </div>
-            <div className="rating-summary"><strong>{checking ? "正在全面分析" : checked ? (issues.length ? "需要一些調整" : "三項皆通過") : "等待完整檢查"}</strong><p>{checking ? "檢查 HTML5、英文與 WCAG…" : checked ? `找到 ${issues.length} 個可改善項目` : "按下按鈕開始分析"}</p></div>
+            <div className="rating-summary"><strong>{checking ? "正在全面分析" : checked ? (issues.length ? "需要一些調整" : "四項皆通過") : "等待完整檢查"}</strong><p>{checking ? "檢查 HTML5、英文、SEO 與 WCAG…" : checked ? `找到 ${issues.length} 個可改善項目` : "按下按鈕開始分析"}</p></div>
           </div>
           <div className="report-view">
             {!checked && <div className="empty">按下「執行完整檢查」以產生稽核報告。</div>}
             {checked && <>
               <p className="report-intro">檢查完成。這是 <strong>{documentTitle}</strong> 的 HTML 品質檢查報告，共發現 {issues.length} 項需要確認，包含 HTML 結構、英文內容、SEO 與無障礙問題。</p>
-              <section className="report-section priority-section"><h2>高優先問題</h2>{report.highPriority.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>行號</th><th>問題</th><th>建議</th></tr></thead><tbody>{report.highPriority.map((issue) => <tr key={issue.id}><td>{issue.line}</td><td><strong>{issue.title}</strong><small>{issue.message}</small></td><td>{issue.replacement || issue.message}</td></tr>)}</tbody></table></div> : <p className="report-none">未發現高優先問題。</p>}</section>
-              <section className="report-section"><h2>英文與規格文字</h2>{report.english.length ? <ul>{report.english.map((issue) => <li key={issue.id}><span>第 {issue.line} 行</span><strong>{issue.title}</strong><p>{issue.message}</p>{issue.replacement && <code>建議：{issue.replacement}</code>}</li>)}</ul> : <p className="report-none">未發現英文文字問題。</p>}</section>
-              <section className="report-section"><h2>HTML 結構與無障礙</h2>{report.structureAndAccessibility.length ? <ul>{report.structureAndAccessibility.map((issue) => <li key={issue.id}><span>第 {issue.line} 行</span><strong>{issue.title}</strong><p>{issue.message}</p>{issue.replacement && <code>建議：{issue.replacement}</code>}</li>)}</ul> : <p className="report-none">未發現其他結構或無障礙問題。</p>}</section>
-              <p className={`report-verdict ${report.highPriority.length ? "blocked" : "clear"}`}>整體判定：<strong>{report.verdict}</strong>。</p>
+              <nav className="report-tabs" aria-label="檢查結果分類">{([{"key":"overview","label":"總覽"},{"key":"html","label":"HTML 結構"},{"key":"grammar","label":"英文內容"},{"key":"seo","label":"SEO"},{"key":"accessibility","label":"無障礙"}] as const).map((tab) => <button key={tab.key} className={resultTab === tab.key ? "active" : ""} onClick={() => setResultTab(tab.key)}>{tab.label}<span>{tab.key === "overview" ? issues.length : issues.filter((x) => x.type === tab.key).length}</span></button>)}</nav>
+              {resultTab === "overview" ? <>
+                <section className="report-section priority-section"><h2>高優先問題</h2>{report.highPriority.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>行號</th><th>問題</th><th>建議</th></tr></thead><tbody>{report.highPriority.map((issue) => <tr key={issue.id}><td>{issue.line}</td><td><strong>{issue.title}</strong><small>{issue.message}</small></td><td>{issue.replacement || issue.message}</td></tr>)}</tbody></table></div> : <p className="report-none">未發現高優先問題。</p>}</section>
+                <p className={`report-verdict ${report.highPriority.length ? "blocked" : "clear"}`}>整體判定：<strong>{report.verdict}</strong>。</p>
+              </> : <section className="report-section category-section"><h2>{resultTab === "html" ? "HTML 結構" : resultTab === "grammar" ? "英文內容" : resultTab === "seo" ? "SEO" : "無障礙"}</h2>{tabIssues.length ? <ul>{tabIssues.map((issue) => <li key={issue.id}><span>第 {issue.line} 行</span><strong>{issue.title}</strong><p>{issue.message}</p>{issue.replacement && <code>建議：{issue.replacement}</code>}</li>)}</ul> : <p className="report-none">此分類未發現問題。</p>}</section>}
             </>}
           </div>
           <div className="results-foot"><button onClick={copyReport} disabled={!issues.length}>複製檢查報告</button><span>本機分析 · 無資料上傳</span></div>

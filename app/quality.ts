@@ -1,4 +1,4 @@
-export type IssueCategory = "html" | "grammar" | "accessibility";
+export type IssueCategory = "html" | "grammar" | "seo" | "accessibility";
 export type IssueSeverity = "error" | "warning" | "suggestion";
 
 export type QualityIssue = {
@@ -159,7 +159,7 @@ export function getSegmentLintMode(text: string): "spelling" | "full" | "skip" {
 export type CategoryRating = { category: IssueCategory; label: string; grade: "A" | "B" | "C" | "D" | "E"; issueCount: number };
 
 export function getCategoryRatings(issues: QualityIssue[]): CategoryRating[] {
-  const labels: Record<IssueCategory, string> = { html: "HTML 結構", grammar: "英文品質", accessibility: "無障礙" };
+  const labels: Record<IssueCategory, string> = { html: "HTML 結構", grammar: "英文內容", seo: "SEO", accessibility: "無障礙" };
   return (Object.keys(labels) as IssueCategory[]).map((category) => {
     const categoryIssues = issues.filter((issue) => issue.type === category);
     const penalty = categoryIssues.reduce((sum, issue) => sum + (issue.severity === "error" ? 3 : issue.severity === "warning" ? 2 : 1), 0);
@@ -178,11 +178,13 @@ export type ReportIssue = QualityIssue & {
 export function buildQualityReport<T extends ReportIssue>(issues: T[]) {
   const highPriority = issues.filter((issue) => issue.severity === "error");
   const english = issues.filter((issue) => issue.type === "grammar" && issue.severity !== "error");
-  const structureAndAccessibility = issues.filter((issue) => issue.type !== "grammar" && issue.severity !== "error");
+  const html = issues.filter((issue) => issue.type === "html" && issue.severity !== "error");
+  const seo = issues.filter((issue) => issue.type === "seo" && issue.severity !== "error");
+  const accessibility = issues.filter((issue) => issue.type === "accessibility" && issue.severity !== "error");
   const verdict = highPriority.length
     ? "目前不建議直接發布"
     : issues.length
       ? "建議完成修正後再發布"
       : "未發現阻擋發布的問題";
-  return { highPriority, english, structureAndAccessibility, verdict };
+  return { highPriority, english, html, seo, accessibility, verdict };
 }

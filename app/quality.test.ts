@@ -85,6 +85,7 @@ describe("category ratings", () => {
     expect(ratings.map(({ category, grade }) => [category, grade])).toEqual([
       ["html", "C"],
       ["grammar", "C"],
+      ["seo", "A"],
       ["accessibility", "A"],
     ]);
   });
@@ -92,11 +93,12 @@ describe("category ratings", () => {
 
 describe("structured quality report", () => {
   it("separates blocking, English, and structural findings", () => {
-    const issue = (type: "html" | "grammar" | "accessibility", severity: "error" | "warning", line: number) => ({ type, severity, line, title: "Test", message: "Test message" });
-    const report = buildQualityReport([issue("html", "error", 2), issue("grammar", "warning", 4), issue("accessibility", "warning", 6)]);
+    const issue = (type: "html" | "grammar" | "seo" | "accessibility", severity: "error" | "warning", line: number) => ({ type, severity, line, title: "Test", message: "Test message" });
+    const report = buildQualityReport([issue("html", "error", 2), issue("grammar", "warning", 4), issue("seo", "warning", 5), issue("accessibility", "warning", 6)]);
     expect(report.highPriority.map((item) => item.line)).toEqual([2]);
     expect(report.english.map((item) => item.line)).toEqual([4]);
-    expect(report.structureAndAccessibility.map((item) => item.line)).toEqual([6]);
+    expect(report.seo.map((item) => item.line)).toEqual([5]);
+    expect(report.accessibility.map((item) => item.line)).toEqual([6]);
     expect(report.verdict).toBe("目前不建議直接發布");
   });
 });
