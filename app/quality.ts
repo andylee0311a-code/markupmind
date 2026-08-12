@@ -21,8 +21,7 @@ const FALLBACK_CONTAINERS = new Set(["DIV", "SECTION", "ARTICLE", "HEADER", "FOO
 
 const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
 
-const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
-");
+const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Return the complete sentence containing a grammar match. */
 export function extractSentenceAt(text: string, index: number): string {
