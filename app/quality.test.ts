@@ -267,3 +267,33 @@ describe("mixed-case technical-term protection", () => {
     expect(getSegmentLintMode("microSD Slot")).toBe("spelling");
   });
 });
+
+
+describe("verified multiword brand protection", () => {
+  const source =
+    "Zebra mobile printer and Welch Allyn vital sign monitor";
+
+  it("masks the verified Welch Allyn brand as one phrase", () => {
+    const masked = maskProtectedProductText(source);
+    const start = source.indexOf("Welch Allyn");
+    expect(masked).toHaveLength(source.length);
+    expect(masked.slice(start, start + "Welch Allyn".length).trim()).toBe("");
+  });
+
+  it("protects multiword Title Case company and product names", () => {
+    const sourceName = "Acme Medical monitor";
+    const masked = maskProtectedProductText(sourceName);
+    expect(masked.slice(0, "Acme Medical".length).trim()).toBe("");
+  });
+
+  it("rejects dictionary substitutions for verified brand words", () => {
+    expect(isActionableSpelling("Welch", "Welsh")).toBe(false);
+    expect(isActionableSpelling("Allyn", "Allen")).toBe(false);
+  });
+
+  it("leaves ordinary lowercase product copy available for checks", () => {
+    const masked = maskProtectedProductText(source);
+    expect(masked).toContain("mobile printer");
+    expect(masked).toContain("vital sign monitor");
+  });
+});
