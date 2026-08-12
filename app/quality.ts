@@ -167,6 +167,7 @@ const DOMAIN_WORDS = new Set([
   "rugged", "medical", "tablet", "tablets", "touchscreen", "fanless", "healthcare", "workstation",
   "photoswipe", "lightbox", "webpage", "datasheet", "middleware", "firmware", "barcode", "webcam",
   "luminance", "brightness", "backlight", "grayscale", "colorimeter", "touchscreen", "viewing", "nits",
+  "fischer", "minimax",
 ]);
 
 function editDistance(left: string, right: string) {
@@ -221,6 +222,7 @@ const PROTECTED_PRODUCT_WORDS =
 export function maskProtectedProductText(text: string): string {
   return text
     .replace(PROTECTED_PRODUCT_WORDS, (token) => " ".repeat(token.length))
+    .replace(/\b[A-Z][a-z]+[A-Z][A-Za-z]*\b/g, (token) => " ".repeat(token.length))
     .replace(/[®™©]/g, " ")
     .replace(/\b[A-Z]{2,}[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
     .replace(/\b[A-Za-z]*\d[A-Za-z0-9/-]*\b/g, (token) => " ".repeat(token.length))
