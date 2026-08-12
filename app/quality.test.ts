@@ -225,3 +225,25 @@ describe("technical grammar calibration", () => {
     ).toBe(true);
   });
 });
+
+
+describe("product proper-noun protection", () => {
+  const connector = "24-pin Fischer MiniMax Connector (optional)";
+
+  it("masks CamelCase product-series names before spelling analysis", () => {
+    const masked = maskProtectedProductText(connector);
+    expect(masked).toHaveLength(connector.length);
+    expect(masked).not.toContain("MiniMax");
+    expect(masked).toContain("Connector");
+  });
+
+  it("recognizes Fischer and MiniMax as approved product terminology", () => {
+    expect(isActionableSpelling("Fischer", "Fisher")).toBe(false);
+    expect(isActionableSpelling("MiniMax", "Minima")).toBe(false);
+  });
+
+  it("does not create a spelling finding for the protected connector name", () => {
+    const masked = maskProtectedProductText(connector);
+    expect(masked.slice(connector.indexOf("MiniMax"), connector.indexOf("MiniMax") + "MiniMax".length).trim()).toBe("");
+  });
+});
