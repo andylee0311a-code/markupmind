@@ -164,6 +164,7 @@ const DOMAIN_WORDS = new Set([
   "dtresearch", "intel", "nvidia", "qualcomm", "windows", "android", "bluetooth", "wifi", "ethernet",
   "rugged", "medical", "tablet", "tablets", "touchscreen", "fanless", "healthcare", "workstation",
   "photoswipe", "lightbox", "webpage", "datasheet", "middleware", "firmware", "barcode", "webcam",
+  "luminance", "brightness", "backlight", "grayscale", "colorimeter", "touchscreen", "viewing", "nits",
 ]);
 
 function editDistance(left: string, right: string) {
@@ -188,6 +189,7 @@ export function isActionableSpelling(token: string, replacement: string) {
   if (!/^[A-Za-z]{4,}$/.test(word) || !/^[A-Za-z]{4,}$/.test(suggestion)) return false;
   if (DOMAIN_WORDS.has(word.toLowerCase())) return false;
   if (word === word.toUpperCase()) return false;
+  if (word[0].toLowerCase() !== suggestion[0].toLowerCase()) return false;
   const allowedDistance = word.length >= 9 ? 2 : 1;
   return editDistance(word, suggestion) <= allowedDistance;
 }
