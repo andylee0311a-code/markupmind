@@ -48,7 +48,7 @@ export function locateTextLine(
   const tail = text.slice(Math.max(0, index));
   const words = tail.match(/[A-Za-z][A-Za-z'’-]*/g)?.slice(0, 5) ?? [];
   if (!words.length) return fallbackLine;
-  const separator = String.raw`(?:\\s|<[^>]*>|&nbsp;)*`;
+  const separator = String.raw`(?:\s|<[^>]*>|&nbsp;)*`;
   const pattern = new RegExp(words.map(escapePattern).join(separator), "gi");
   const candidates = [...source.matchAll(pattern)];
   if (!candidates.length) {
