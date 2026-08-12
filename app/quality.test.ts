@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractSentenceAt, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling, locateTextLine } from "./quality";
 
 describe("DOM-level visible text extraction", () => {
   it("keeps a sentence intact across inline markup", () => {
@@ -100,5 +100,51 @@ describe("structured quality report", () => {
     expect(report.seo.map((item) => item.line)).toEqual([5]);
     expect(report.accessibility.map((item) => item.line)).toEqual([6]);
     expect(report.verdict).toBe("目前不建議直接發布");
+  });
+});
+
+
+describe("grammar source context", () => {
+  it("returns the complete sentence containing the matched issue", () => {
+    const text = "The first sentence is correct. Our tools helps your team move faster. Another sentence.";
+    expect(extractSentenceAt(text, text.indexOf("helps"))).toBe(
+      "Our tools helps your team move faster.",
+    );
+  });
+
+  it("maps a grammar match to its exact original HTML line", () => {
+    const source = [
+      "<main>",
+      "  <p>",
+      "    The introduction is correct.",
+      "    Our tools helps your team move faster.",
+      "  </p>",
+      "</main>",
+    ].join("\n");
+    const text =
+      "The introduction is correct. Our tools helps your team move faster.";
+    expect(locateTextLine(source, text, text.indexOf("Our"), 2)).toBe(4);
+  });
+
+  it("keeps line mapping accurate across inline HTML elements", () => {
+    const source = [
+      "<main>",
+      "  <p>",
+      "    Our <strong>tools</strong> helps your team move faster.",
+      "  </p>",
+      "</main>",
+    ].join("\n");
+    const text = "Our tools helps your team move faster.";
+    expect(locateTextLine(source, text, text.indexOf("Our"), 2)).toBe(3);
+  });
+
+  it("selects the occurrence nearest the DOM fallback line", () => {
+    const source = [
+      "<p>Our tools helps.</p>",
+      "<div>Spacer</div>",
+      "<div>Spacer</div>",
+      "<p>Our tools helps.</p>",
+    ].join("\n");
+    expect(locateTextLine(source, "Our tools helps.", 0, 4)).toBe(4);
   });
 });
