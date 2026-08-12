@@ -21,6 +21,49 @@ const FALLBACK_CONTAINERS = new Set(["DIV", "SECTION", "ARTICLE", "HEADER", "FOO
 
 const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
 
+const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
+");
+
+/** Return the complete sentence containing a grammar match. */
+export function extractSentenceAt(text: string, index: number): string {
+  const safeIndex = Math.max(0, Math.min(index, text.length));
+  let start = safeIndex;
+  while (start > 0 && !/[.!?\n]/.test(text[start - 1])) start -= 1;
+  let end = safeIndex;
+  while (end < text.length && !/[.!?\n]/.test(text[end])) end += 1;
+  if (end < text.length && /[.!?]/.test(text[end])) end += 1;
+  return text.slice(start, end).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Resolve a lint position back to the original HTML instead of a browser-
+ * normalized DOM line. The pattern permits inline tags and whitespace between
+ * words, so text such as "Our <strong>tools</strong> helps" stays traceable.
+ */
+export function locateTextLine(
+  source: string,
+  text: string,
+  index: number,
+  fallbackLine: number,
+): number {
+  const tail = text.slice(Math.max(0, index));
+  const words = tail.match(/[A-Za-z][A-Za-z'’-]*/g)?.slice(0, 5) ?? [];
+  if (!words.length) return fallbackLine;
+  const separator = String.raw`(?:\\s|<[^>]*>|&nbsp;)*`;
+  const pattern = new RegExp(words.map(escapePattern).join(separator), "gi");
+  const candidates = [...source.matchAll(pattern)];
+  if (!candidates.length) {
+    const tokenPattern = new RegExp(escapePattern(words[0]), "gi");
+    candidates.push(...source.matchAll(tokenPattern));
+  }
+  if (!candidates.length) return fallbackLine;
+  return candidates
+    .map((match) => lineOf(source, match.index ?? 0))
+    .sort((left, right) =>
+      Math.abs(left - fallbackLine) - Math.abs(right - fallbackLine),
+    )[0];
+}
+
 function mapSourceLines(source: string, document: Document) {
   const lines = new WeakMap<Element, number>();
   const occurrences = new Map<string, number>();
