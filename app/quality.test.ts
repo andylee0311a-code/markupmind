@@ -22,6 +22,40 @@ describe("DOM-level visible text extraction", () => {
     ]);
   });
 
+  it("keeps sibling specification contexts separate", () => {
+    const source = [
+      "<li>",
+      "  <div>QWERTY, full row of F1 to F12 function keys</div>",
+      "  <div>Keys for Windows shortcuts, media controls, screen brightness</div>",
+      "</li>",
+    ].join("\n");
+    expect(extractTextSegments(source)).toEqual([
+      { text: "QWERTY, full row of F1 to F12 function keys", line: 2 },
+      {
+        text: "Keys for Windows shortcuts, media controls, screen brightness",
+        line: 3,
+      },
+    ]);
+  });
+
+  it("does not report repeated words across semantic container boundaries", () => {
+    const source =
+      "<td><div>full row of function keys</div><div>Keys for Windows shortcuts</div></td>";
+    const findings = extractTextSegments(source).flatMap((segment) =>
+      findHighConfidenceGrammarIssues(segment.text),
+    );
+    expect(findings.filter((finding) => finding.title === "英文單字重複")).toHaveLength(0);
+  });
+
+  it("still detects a repeated word inside the same sentence", () => {
+    const segments = extractTextSegments("<p>The keyboard has has a backlight.</p>");
+    expect(
+      findHighConfidenceGrammarIssues(segments[0].text).some(
+        (finding) => finding.title === "英文單字重複",
+      ),
+    ).toBe(true);
+  });
+
   it("annotates repeated audit targets with their original line", () => {
     const source = '<img src="first.png">\n<section>Content</section>\n<img src="second.png">';
     const audit = new DOMParser().parseFromString(annotateSourceLines(source), "text/html");
