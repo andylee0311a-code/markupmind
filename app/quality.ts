@@ -167,7 +167,7 @@ const DOMAIN_WORDS = new Set([
   "rugged", "medical", "tablet", "tablets", "touchscreen", "fanless", "healthcare", "workstation",
   "photoswipe", "lightbox", "webpage", "datasheet", "middleware", "firmware", "barcode", "webcam",
   "luminance", "brightness", "backlight", "grayscale", "colorimeter", "touchscreen", "viewing", "nits",
-  "fischer", "minimax", "microsd",
+  "fischer", "minimax", "microsd", "welch", "allyn",
 ]);
 
 function editDistance(left: string, right: string) {
@@ -218,9 +218,27 @@ export function getSegmentLintMode(text: string): "spelling" | "full" | "skip" {
 const PROTECTED_PRODUCT_WORDS =
   /\b(?:intel|core|nvidia|geforce|quadro|qualcomm|snapdragon|windows|android|bluetooth|wi-?fi|ethernet|thunderbolt|photoswipe|dtresearch)\b/gi;
 
+const VERIFIED_BRAND_PHRASES = [
+  "Welch Allyn",
+  "Fischer MiniMax",
+] as const;
+
+const escapeBrandPhrase = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const VERIFIED_BRAND_PATTERN = new RegExp(
+  `\\b(?:${VERIFIED_BRAND_PHRASES.map(escapeBrandPhrase).join("|")})\\b`,
+  "gi",
+);
+
+const MULTIWORD_PROPER_NOUN_PATTERN =
+  /\b[A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)+\b/g;
+
 /** Hide brands, trademarks and model tokens without changing lint offsets. */
 export function maskProtectedProductText(text: string): string {
   return text
+    .replace(VERIFIED_BRAND_PATTERN, (token) => " ".repeat(token.length))
+    .replace(MULTIWORD_PROPER_NOUN_PATTERN, (token) => " ".repeat(token.length))
     .replace(PROTECTED_PRODUCT_WORDS, (token) => " ".repeat(token.length))
     .replace(/\b[A-Za-z]*[a-z][A-Z][A-Za-z]*\b/g, (token) => " ".repeat(token.length))
     .replace(/[®™©]/g, " ")
