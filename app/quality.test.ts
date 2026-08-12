@@ -72,6 +72,9 @@ describe("actionable spelling filter", () => {
     expect(isActionableSpelling("NVIS", "NIVS")).toBe(false);
     expect(isActionableSpelling("rugged", "ruggedly")).toBe(false);
     expect(isActionableSpelling("PhotoSwipe", "Photoswipe")).toBe(false);
+    expect(isActionableSpelling("Luminance", "Dominance")).toBe(false);
+    expect(isActionableSpelling("luminance", "luminescence")).toBe(false);
+    expect(isActionableSpelling("Enviromental", "Environmental")).toBe(true);
   });
 });
 
