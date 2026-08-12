@@ -102,15 +102,17 @@ export function extractTextSegments(source: string): TextSegment[] {
   while ((node = walker.nextNode())) {
     const value = node.textContent?.replace(/\s+/g, " ").trim();
     if (!value || !/[A-Za-z]{2}/.test(value)) continue;
-    let current = node.parentElement;
-    let fallback: Element | null = null;
-    while (current && current !== document.body) {
-      if (!fallback && FALLBACK_CONTAINERS.has(current.tagName)) fallback = current;
-      if (PHRASE_CONTAINERS.has(current.tagName)) break;
-      current = current.parentElement;
+    let container = node.parentElement;
+    while (container && container !== document.body) {
+      if (
+        PHRASE_CONTAINERS.has(container.tagName) ||
+        FALLBACK_CONTAINERS.has(container.tagName)
+      ) {
+        break;
+      }
+      container = container.parentElement;
     }
-    const container = current && PHRASE_CONTAINERS.has(current.tagName) ? current : fallback || node.parentElement;
-    if (!container) continue;
+    if (!container || container === document.body) continue;
     groups.set(container, [...(groups.get(container) || []), value]);
   }
 
