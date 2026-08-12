@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { annotateSourceLines, buildQualityReport, extractSentenceAt, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling, locateTextLine } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractSentenceAt, extractTextSegments, findHighConfidenceGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling, isSafeGrammarSuggestion, locateTextLine, maskProtectedProductText } from "./quality";
 
 describe("DOM-level visible text extraction", () => {
   it("keeps a sentence intact across inline markup", () => {
@@ -149,5 +149,45 @@ describe("grammar source context", () => {
       "<p>Our tools helps.</p>",
     ].join("\n");
     expect(locateTextLine(source, "Our tools helps.", 0, 4)).toBe(4);
+  });
+});
+
+
+describe("technical grammar calibration", () => {
+  const specification =
+    '6” touchscreen, an Intel® Core™ i7/i5 processor, and a full-sized keyboard set.';
+
+  it("treats a product specification list as spelling-only", () => {
+    expect(getSegmentLintMode(specification)).toBe("spelling");
+  });
+
+  it("masks brands, trademarks and processor models while preserving offsets", () => {
+    const masked = maskProtectedProductText(specification);
+    expect(masked).toHaveLength(specification.length);
+    expect(masked).not.toMatch(/Intel|Core|i7|i5|®|™/);
+    expect(masked).toContain("touchscreen");
+  });
+
+  it("rejects a punctuation-prefixed replacement for a grammar finding", () => {
+    expect(
+      isSafeGrammarSuggestion("Intel", ".Intel", "Agreement", "full"),
+    ).toBe(false);
+  });
+
+  it("does not allow full grammar advice in spelling-only fragments", () => {
+    expect(
+      isSafeGrammarSuggestion("Intel", "intel", "Agreement", "spelling"),
+    ).toBe(false);
+  });
+
+  it("keeps the known environmental spelling correction", () => {
+    expect(
+      isSafeGrammarSuggestion(
+        "Enviromental",
+        "Environmental",
+        "Spelling",
+        "spelling",
+      ),
+    ).toBe(true);
   });
 });

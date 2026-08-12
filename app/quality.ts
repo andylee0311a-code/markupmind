@@ -194,10 +194,50 @@ export function isActionableSpelling(token: string, replacement: string) {
   return editDistance(word, suggestion) <= allowedDistance;
 }
 
+const FINITE_VERB_PATTERN =
+  /\b(?:am|is|are|was|were|be|been|being|has|have|had|do|does|did|provides?|supports?|includes?|features?|offers?|allows?|helps?|works?|needs?|saves?|uses?|delivers?|enables?|can|could|may|might|must|shall|should|will|would)\b/i;
+
+/** Product-spec lists and headings are phrases, not sentences to grammar-correct. */
 export function getSegmentLintMode(text: string): "spelling" | "full" | "skip" {
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  if (!/[A-Za-z]{4}/.test(text)) return "skip";
-  return words.length <= 5 ? "spelling" : "full";
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (!/[A-Za-z]{4}/.test(normalized)) return "skip";
+  const looksLikeSpecificationList =
+    (normalized.match(/,/g)?.length ?? 0) >= 2 &&
+    !FINITE_VERB_PATTERN.test(normalized);
+  const looksLikeHeading =
+    !/[.!?]$/.test(normalized) && !FINITE_VERB_PATTERN.test(normalized);
+  return words.length <= 5 || looksLikeSpecificationList || looksLikeHeading
+    ? "spelling"
+    : "full";
+}
+
+const PROTECTED_PRODUCT_WORDS =
+  /\b(?:intel|core|nvidia|geforce|quadro|qualcomm|snapdragon|windows|android|bluetooth|wi-?fi|ethernet|thunderbolt|photoswipe|dtresearch)\b/gi;
+
+/** Hide brands, trademarks and model tokens without changing lint offsets. */
+export function maskProtectedProductText(text: string): string {
+  return text
+    .replace(PROTECTED_PRODUCT_WORDS, (token) => " ".repeat(token.length))
+    .replace(/[®™©]/g, " ")
+    .replace(/\b[A-Z]{2,}[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
+    .replace(/\b[A-Za-z]*\d[A-Za-z0-9/-]*\b/g, (token) => " ".repeat(token.length))
+    .replace(/\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b/g, (token) => " ".repeat(token.length));
+}
+
+export function isSafeGrammarSuggestion(
+  original: string,
+  replacement: string,
+  kind: string,
+  lintMode: "spelling" | "full",
+): boolean {
+  if (!original.trim() || !replacement.trim()) return false;
+  if (kind === "Spelling") return isActionableSpelling(original, replacement);
+  if (lintMode !== "full") return false;
+  if (kind !== "Punctuation" && !/^[A-Za-z0-9"'(]/.test(replacement.trim())) {
+    return false;
+  }
+  return true;
 }
 
 export type CategoryRating = { category: IssueCategory; label: string; grade: "A" | "B" | "C" | "D" | "E"; issueCount: number };
