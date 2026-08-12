@@ -6,7 +6,7 @@ import { Dialect, WorkerLinter } from "harper.js";
 import { binaryInlined } from "harper.js/binaryInlined";
 import axe from "axe-core";
 import { dtrLogo } from "./dtr-logo";
-import { annotateSourceLines, buildQualityReport, extractSentenceAt, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling, locateTextLine } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractSentenceAt, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings, getSegmentLintMode, isSafeGrammarSuggestion, locateTextLine, maskProtectedProductText } from "./quality";
 
 type Issue = {
   id: string;
@@ -376,10 +376,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
 
     const lintMode = getSegmentLintMode(decoded);
     if (lintMode === "skip" || (lintMode === "full" && !(await linter.isLikelyEnglish(decoded)))) continue;
-    const grammarText = decoded
-      .replace(/\b[A-Z]{2,}[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
-      .replace(/\b[A-Za-z]*\d[A-Za-z0-9-]*\b/g, (token) => " ".repeat(token.length))
-      .replace(/\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b/g, (token) => " ".repeat(token.length));
+    const grammarText = maskProtectedProductText(decoded);
     const lints = await linter.lint(grammarText, { language: "plaintext", isolateEnglish: lintMode === "full" });
     for (const lint of lints) {
       const span = lint.span();
@@ -388,7 +385,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
       const replacement = suggestions[0]?.get_replacement_text();
       const originalToken = grammarText.slice(span.start, span.end);
       const allowedKind = lintMode === "spelling" ? kind === "Spelling" : reliableHarperKinds.has(kind);
-      if (!allowedKind || !replacement || (kind === "Spelling" && !isActionableSpelling(originalToken, replacement))) {
+      if (!allowedKind || !replacement || !isSafeGrammarSuggestion(originalToken, replacement, kind, lintMode)) {
         suggestions.forEach((suggestion) => suggestion.free());
         span.free();
         lint.free();
