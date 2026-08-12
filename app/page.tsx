@@ -6,7 +6,7 @@ import { Dialect, WorkerLinter } from "harper.js";
 import { binaryInlined } from "harper.js/binaryInlined";
 import axe from "axe-core";
 import { dtrLogo } from "./dtr-logo";
-import { annotateSourceLines, buildQualityReport, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling } from "./quality";
+import { annotateSourceLines, buildQualityReport, extractSentenceAt, extractTextSegments, findHighConfidenceGrammarIssues as findGrammarIssues, getCategoryRatings, getSegmentLintMode, isActionableSpelling, locateTextLine } from "./quality";
 
 type Issue = {
   id: string;
@@ -16,6 +16,7 @@ type Issue = {
   message: string;
   line: number;
   excerpt: string;
+  sentence?: string;
   replacement?: string;
 };
 
@@ -236,7 +237,7 @@ export function analyse(source: string): Issue[] {
       for (const match of text.matchAll(rule.re)) {
         const line = lineOf(source, base + (match.index || 0));
         const replacement = rule.fix(match[0], match[1], match[2]);
-        add({ type: "grammar", severity: "warning", title: rule.title, message: rule.msg, line, excerpt: excerptAt(source, line), replacement });
+        add({ type: "grammar", severity: "warning", title: rule.title, message: rule.msg, line: locateTextLine(source, text, match.index || 0, line), excerpt: excerptAt(source, line), sentence: extractSentenceAt(text, match.index || 0), replacement });
       }
     }
   }
@@ -357,7 +358,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
   for (const segment of textSegments) {
     const decoded = segment.text;
     for (const finding of findGrammarIssues(decoded)) {
-      const line = segment.line;
+      const line = locateTextLine(source, decoded, finding.index, segment.line);
       const key = `${line}-${finding.title}-${finding.replacement || ""}`;
       if (grammarKeys.has(key)) continue;
       grammarKeys.add(key);
@@ -368,6 +369,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
         message: finding.message,
         line,
         excerpt: excerptAt(source, line),
+        sentence: extractSentenceAt(decoded, finding.index),
         replacement: finding.replacement,
       });
     }
@@ -392,7 +394,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
         lint.free();
         continue;
       }
-      const line = segment.line;
+      const line = locateTextLine(source, decoded, span.start, segment.line);
       const translated = translateGrammarIssue(kind, lint.message());
       const key = `${line}-${translated.title}-${replacement || ""}`;
       if (grammarKeys.has(key)) {
@@ -409,6 +411,7 @@ async function analyseDocument(source: string): Promise<Issue[]> {
         message: translated.message,
         line,
         excerpt: excerptAt(source, line),
+        sentence: extractSentenceAt(decoded, span.start),
         replacement,
       });
       suggestions.forEach((suggestion) => suggestion.free());
@@ -475,7 +478,7 @@ export default function Home() {
   };
   const copyReport = async () => {
     const table = (items: Issue[]) => items.map((item) => `| ${item.line} | ${item.title} | ${item.replacement || item.message} |`).join("\n") || "無";
-    const bullets = (items: Issue[]) => items.map((item) => `- 第 ${item.line} 行：${item.title} — ${item.replacement || item.message}`).join("\n") || "- 無";
+    const bullets = (items: Issue[]) => items.map((item) => `- 第 ${item.line} 行：${item.title}${item.type === "grammar" && item.sentence ? `\n  - 錯誤句子：${item.sentence}` : ""}\n  - ${item.message}${item.replacement ? `\n  - 建議：${item.replacement}` : ""}`).join("\n") || "- 無";
     await navigator.clipboard.writeText(`檢查完成。這是 **${documentTitle}** 的 HTML 品質檢查報告，共發現 ${issues.length} 項需要確認。\n\n### 高優先問題\n\n| 行號 | 問題 | 建議 |\n| --- | --- | --- |\n${table(report.highPriority)}\n\n### HTML 結構\n\n${bullets(issues.filter((x) => x.type === "html"))}\n\n### 英文內容\n\n${bullets(issues.filter((x) => x.type === "grammar"))}\n\n### SEO\n\n${bullets(issues.filter((x) => x.type === "seo"))}\n\n### 無障礙\n\n${bullets(issues.filter((x) => x.type === "accessibility"))}\n\n整體判定：**${report.verdict}**。`);
   };
 
@@ -553,7 +556,7 @@ export default function Home() {
               {resultTab === "overview" ? <>
                 <section className="report-section priority-section"><h2>高優先問題</h2>{report.highPriority.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>行號</th><th>問題</th><th>建議</th></tr></thead><tbody>{report.highPriority.map((issue) => <tr key={issue.id}><td>{issue.line}</td><td><strong>{issue.title}</strong><small>{issue.message}</small></td><td>{issue.replacement || issue.message}</td></tr>)}</tbody></table></div> : <p className="report-none">未發現高優先問題。</p>}</section>
                 <p className={`report-verdict ${report.highPriority.length ? "blocked" : "clear"}`}>整體判定：<strong>{report.verdict}</strong>。</p>
-              </> : <section className="report-section category-section"><h2>{resultTab === "html" ? "HTML 結構" : resultTab === "grammar" ? "英文內容" : resultTab === "seo" ? "SEO" : "無障礙"}</h2>{tabIssues.length ? <ul>{tabIssues.map((issue) => <li key={issue.id}><span>第 {issue.line} 行</span><strong>{issue.title}</strong><p>{issue.message}</p>{issue.replacement && <code>建議：{issue.replacement}</code>}</li>)}</ul> : <p className="report-none">此分類未發現問題。</p>}</section>}
+              </> : <section className="report-section category-section"><h2>{resultTab === "html" ? "HTML 結構" : resultTab === "grammar" ? "英文內容" : resultTab === "seo" ? "SEO" : "無障礙"}</h2>{tabIssues.length ? <ul>{tabIssues.map((issue) => <li key={issue.id}><span>第 {issue.line} 行</span><strong>{issue.title}</strong>{issue.type === "grammar" && issue.sentence && <blockquote className="grammar-sentence"><small>錯誤句子</small>{issue.sentence}</blockquote>}<p>{issue.message}</p>{issue.replacement && <code>建議：{issue.replacement}</code>}</li>)}</ul> : <p className="report-none">此分類未發現問題。</p>}</section>}
             </>}
           </div>
           <div className="results-foot"><button onClick={copyReport} disabled={!issues.length}>複製檢查報告</button><span>本機分析 · 無資料上傳</span></div>
