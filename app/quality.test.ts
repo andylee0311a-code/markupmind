@@ -247,3 +247,23 @@ describe("product proper-noun protection", () => {
     expect(masked.slice(connector.indexOf("MiniMax"), connector.indexOf("MiniMax") + "MiniMax".length).trim()).toBe("");
   });
 });
+
+
+describe("mixed-case technical-term protection", () => {
+  it("masks microSD without changing source offsets", () => {
+    const source = "microSD Slot";
+    const masked = maskProtectedProductText(source);
+    expect(masked).toHaveLength(source.length);
+    expect(masked.slice(0, "microSD".length).trim()).toBe("");
+    expect(masked).toContain("Slot");
+  });
+
+  it("rejects dictionary replacements for the microSD specification name", () => {
+    expect(isActionableSpelling("microSD", "microS")).toBe(false);
+    expect(isActionableSpelling("microSD", "micros")).toBe(false);
+  });
+
+  it("keeps mixed-case technical labels in spelling-only mode", () => {
+    expect(getSegmentLintMode("microSD Slot")).toBe("spelling");
+  });
+});
