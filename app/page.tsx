@@ -551,7 +551,7 @@ export default function Home() {
             </div>
             <div className="rating-summary"><strong>{checking ? "正在全面分析" : checked ? (issues.length ? "需要一些調整" : "四項皆通過") : "等待完整檢查"}</strong><p>{checking ? "檢查 HTML5、英文、SEO 與 WCAG…" : checked ? `找到 ${issues.length} 個可改善項目` : "按下按鈕開始分析"}</p></div>
           </div>
-          <div className="report-view" data-report-version="2.1">
+          <div className="report-view" data-report-version="2.2">
             {!checked && <div className="empty">按下「執行完整檢查」以產生稽核報告。</div>}
             {checked && <>
               <p className="report-intro">檢查完成。這是 <strong>{documentTitle}</strong> 的 HTML 品質檢查報告，共發現 {issues.length} 項需要確認，包含 HTML 結構、英文內容、SEO 與無障礙問題。</p>
