@@ -20,6 +20,12 @@ type Issue = {
   replacement?: string;
 };
 
+const severityMeta = {
+  error: { label: "必須修正", icon: "!" },
+  warning: { label: "建議優先修正", icon: "▲" },
+  suggestion: { label: "可改善", icon: "✓" },
+} as const;
+
 const sample = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -551,9 +557,9 @@ export default function Home() {
               <p className="report-intro">檢查完成。這是 <strong>{documentTitle}</strong> 的 HTML 品質檢查報告，共發現 {issues.length} 項需要確認，包含 HTML 結構、英文內容、SEO 與無障礙問題。</p>
               <nav className="report-tabs" aria-label="檢查結果分類">{([{"key":"overview","label":"總覽"},{"key":"html","label":"HTML 結構"},{"key":"grammar","label":"英文內容"},{"key":"seo","label":"SEO"},{"key":"accessibility","label":"無障礙"}] as const).map((tab) => <button key={tab.key} className={resultTab === tab.key ? "active" : ""} onClick={() => setResultTab(tab.key)}>{tab.label}<span>{tab.key === "overview" ? issues.length : issues.filter((x) => x.type === tab.key).length}</span></button>)}</nav>
               {resultTab === "overview" ? <>
-                <section className="report-section priority-section"><h2>高優先問題</h2>{report.highPriority.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>行號</th><th>問題</th><th>建議</th></tr></thead><tbody>{report.highPriority.map((issue) => <tr key={issue.id}><td>{issue.line}</td><td><strong>{issue.title}</strong><small>{issue.message}</small></td><td>{issue.replacement || issue.message}</td></tr>)}</tbody></table></div> : <p className="report-none">未發現高優先問題。</p>}</section>
+                <section className="report-section priority-section"><h2>高優先問題</h2><p className="section-help">請優先處理標示為「必須修正」與「建議優先修正」的項目。</p>{report.highPriority.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>位置</th><th>發現的問題</th><th>明確修正方式</th></tr></thead><tbody>{report.highPriority.map((issue) => <tr key={issue.id}><td><strong className="line-chip">第 {issue.line} 行</strong><span className={`severity-chip ${issue.severity}`}>{severityMeta[issue.severity].icon} {severityMeta[issue.severity].label}</span></td><td><strong>{issue.title}</strong><small className="why-label">問題說明</small><p>{issue.message}</p>{issue.excerpt && <pre className="source-excerpt"><span>目前內容</span>{issue.excerpt}</pre>}</td><td><span className="fix-label">建議改法</span><code className="fix-value">{issue.replacement || "請依左側問題說明調整此元素的標籤、屬性或內容。"}</code></td></tr>)}</tbody></table></div> : <p className="report-none">未發現高優先問題。</p>}</section>
                 <p className={`report-verdict ${report.highPriority.length ? "blocked" : "clear"}`}>整體判定：<strong>{report.verdict}</strong>。</p>
-              </> : <section className="report-section category-section"><h2>{resultTab === "html" ? "HTML 結構" : resultTab === "grammar" ? "英文內容" : resultTab === "seo" ? "SEO" : "無障礙"}</h2>{tabIssues.length ? <ul>{tabIssues.map((issue) => <li key={issue.id}><span>第 {issue.line} 行</span><strong>{issue.title}</strong>{issue.type === "grammar" && issue.sentence && <blockquote className="grammar-sentence"><small>錯誤句子</small>{issue.sentence}</blockquote>}<p>{issue.message}</p>{issue.replacement && <code>建議：{issue.replacement}</code>}</li>)}</ul> : <p className="report-none">此分類未發現問題。</p>}</section>}
+              </> : <section className="report-section category-section"><h2>{resultTab === "html" ? "HTML 結構" : resultTab === "grammar" ? "英文內容" : resultTab === "seo" ? "SEO" : "無障礙"}</h2><p className="section-help">每一項均列出原始內容、問題原因與可直接採用的修正方式。</p>{tabIssues.length ? <ul>{tabIssues.map((issue) => <li className={`advice-card severity-${issue.severity}`} key={issue.id}><div className="advice-head"><span className="line-chip">第 {issue.line} 行</span><span className={`severity-chip ${issue.severity}`}>{severityMeta[issue.severity].icon} {severityMeta[issue.severity].label}</span></div><strong>{issue.title}</strong>{issue.type === "grammar" && issue.sentence ? <blockquote className="grammar-sentence"><small>偵測到的完整句子</small>{issue.sentence}</blockquote> : issue.excerpt ? <pre className="source-excerpt"><span>目前 HTML</span>{issue.excerpt}</pre> : null}<div className="problem-explanation"><b>為什麼是問題</b><p>{issue.message}</p></div><div className="fix-panel"><b>建議如何修改</b>{issue.replacement ? <code>{issue.replacement}</code> : <p>請依上述說明修正該行的元素結構、屬性或文字內容。</p>}</div></li>)}</ul> : <p className="report-none">此分類未發現問題。</p>}</section>}
             </>}
           </div>
           <div className="results-foot"><button onClick={copyReport} disabled={!issues.length}>複製檢查報告</button><span>本機分析 · 無資料上傳</span></div>
